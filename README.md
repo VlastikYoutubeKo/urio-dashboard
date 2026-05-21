@@ -84,6 +84,11 @@ When you first visit the dashboard, you will be redirected to the `/install` pag
 - **Environment Variables:** Credentials and the admin password hash are stored in the `.env` file. **Do not share this file.**
 - **Database Backups:** It is recommended to regularly back up the `instance/transfer_stats.db` file.
 
+## Credits & Attributions
+
+- **Developed Entirely with AI:** This redesigned version of the dashboard was conceptualized, architected, and coded entirely using AI.
+- **Original Basis:** Before the full SaaS redesign, this project was based on the original code by [techroy23/UrNetwork-Stats-Dashboard](https://github.com/techroy23/UrNetwork-Stats-Dashboard).
+
 ---
 
 ## License
