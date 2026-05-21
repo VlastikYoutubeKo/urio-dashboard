@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #ededed;
+  --color-primary-hover: #ffffff;
+  --color-primary-bg: #0070f3;
+  --color-primary-bg-hover: #3291ff;
+  --color-bg-dark: #000000;
+  --color-bg-secondary: #0a0a0a;
+  --color-card-bg: #0a0a0a;
+  --color-border: #333333;
+  --color-border-hover: #444444;
+  --color-text-main: #ededed;
+  --color-text-muted: #a1a1aa;
+}
+
+@layer base {
+  body {
+    @apply bg-[var(--color-bg-dark)] text-[var(--color-text-main)] font-sans antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-all duration-200 text-sm flex items-center justify-center gap-2;
+  }
+  .btn-primary {
+    @apply bg-[var(--color-text-main)] text-black hover:bg-white;
+  }
+  .btn-secondary {
+    @apply bg-transparent border border-[var(--color-border)] text-[var(--color-text-main)] hover:border-[var(--color-text-main)] hover:bg-[var(--color-bg-secondary)];
+  }
+  .btn-danger {
+    @apply bg-transparent border border-red-900/50 text-red-500 hover:border-red-500 hover:bg-red-950/20;
+  }
+  .btn-success {
+    @apply bg-transparent border border-emerald-900/50 text-emerald-500 hover:border-emerald-500 hover:bg-emerald-950/20;
+  }
+  
+  .card {
+    @apply bg-[var(--color-card-bg)] border border-[var(--color-border)] rounded-xl p-6 transition-all duration-200;
+  }
+  
+  .input {
+    @apply w-full px-3 py-2 bg-black border border-[var(--color-border)] rounded-md text-[var(--color-text-main)] placeholder-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-text-main)] transition-colors text-sm;
+  }
+  
+  .label {
+    @apply block text-sm font-medium text-[var(--color-text-muted)] mb-1.5;
+  }
+}
