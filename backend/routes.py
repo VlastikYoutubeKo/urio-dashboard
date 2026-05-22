@@ -473,8 +473,16 @@ from backend.ur_api import (
     fetch_provider_stats, fetch_preferences, set_preferences, send_feedback, 
     fetch_90_day_stats, fetch_hello, fetch_wallet_balance, validate_wallet_address,
     init_circle_wallet, transfer_out_circle, fetch_payout_wallet, set_payout_wallet,
-    add_account_wallet
+    add_account_wallet, fetch_payment_stats
 )
+
+@api_bp.route('/account/payments', methods=['GET'])
+@login_required
+def get_payouts():
+    account_id = request.args.get('account_id')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    return jsonify({"account_payments": fetch_payment_stats(jwt) if jwt else []})
 
 @api_bp.route('/dashboard/wallet/balance', methods=['GET'])
 @login_required

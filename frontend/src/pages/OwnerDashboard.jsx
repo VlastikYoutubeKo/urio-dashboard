@@ -734,7 +734,7 @@ function WalletsTab() {
     setLoading(true);
     Promise.all([
       fetch(`/api/dashboard/wallets?account_id=${selectedAcc}`).then(res => res.json()),
-      fetch(`/api/account/payments`).then(res => res.json()), // Existing endpoint used for earnings
+      fetch(`/api/account/payments?account_id=${selectedAcc}`).then(res => res.json()),
       fetch(`/api/dashboard/payout-wallet?account_id=${selectedAcc}`).then(res => res.json())
     ]).then(([wData, pData, pwData]) => {
       setData(wData.wallets || []);
