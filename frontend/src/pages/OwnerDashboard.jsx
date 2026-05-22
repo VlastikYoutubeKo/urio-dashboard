@@ -709,9 +709,14 @@ function ApiKeysTab() {
 
 function WalletsTab() {
   const [data, setData] = useState([]);
+  const [payouts, setPayouts] = useState([]);
+  const [payoutWalletId, setPayoutWalletId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
+  
+  const [newAddr, setNewAddr] = useState('');
+  const [newBlockchain, setNewBlockchain] = useState('SOL');
 
   useEffect(() => {
     fetch('/api/dashboard/account')
@@ -724,18 +729,41 @@ function WalletsTab() {
       });
   }, []);
 
-  const fetchWallets = () => {
+  const fetchData = () => {
     if (!selectedAcc) return;
     setLoading(true);
-    fetch(`/api/dashboard/wallets?account_id=${selectedAcc}`)
-      .then(res => res.json())
-      .then(d => {
-        setData(d.wallets || []);
-        setLoading(false);
-      });
+    Promise.all([
+      fetch(`/api/dashboard/wallets?account_id=${selectedAcc}`).then(res => res.json()),
+      fetch(`/api/account/payments`).then(res => res.json()), // Existing endpoint used for earnings
+      fetch(`/api/dashboard/payout-wallet?account_id=${selectedAcc}`).then(res => res.json())
+    ]).then(([wData, pData, pwData]) => {
+      setData(wData.wallets || []);
+      setPayouts(pData.account_payments || []);
+      setPayoutWalletId(pwData.wallet_id);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   };
 
-  useEffect(() => { fetchWallets(); }, [selectedAcc]);
+  useEffect(() => { fetchData(); }, [selectedAcc]);
+
+  const handleAddWallet = async (e) => {
+    e.preventDefault();
+    const res = await fetch('/api/dashboard/wallets/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: selectedAcc, blockchain: newBlockchain, address: newAddr })
+    });
+    if(res.ok) { setNewAddr(''); fetchData(); }
+    else alert("Failed to add wallet");
+  };
+
+  const handleSetPayout = async (id) => {
+    const res = await fetch('/api/dashboard/payout-wallet/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: selectedAcc, wallet_id: id })
+    });
+    if(res.ok) fetchData();
+    else alert("Failed to set payout wallet");
+  };
 
   const handleRemove = async (walletId) => {
     if (!confirm("Remove this wallet?")) return;
@@ -743,17 +771,47 @@ function WalletsTab() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account_id: selectedAcc, wallet_id: walletId })
     });
-    fetchWallets();
+    fetchData();
+  };
+
+  const handleInitCircle = async () => {
+    const res = await fetch('/api/dashboard/wallet/circle/init', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: selectedAcc })
+    });
+    const d = await res.json();
+    if(res.ok) alert("Circle Wallet Initialized!\nChallenge ID: " + d.challenge_id);
+    else alert(d.error || "Failed to init Circle wallet");
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="card">
-        <select className="input max-w-xs mb-6" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
-          {accounts.map(acc => (
-            <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
-          ))}
-        </select>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <select className="input max-w-xs" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
+            {accounts.map(acc => (
+              <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
+            ))}
+          </select>
+          <button onClick={handleInitCircle} className="btn btn-secondary text-xs">Init Circle Self-Custody</button>
+        </div>
+
+        <form onSubmit={handleAddWallet} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-[#111] rounded-lg border border-[#333]">
+          <div>
+            <label className="label">Blockchain</label>
+            <select className="input" value={newBlockchain} onChange={e => setNewBlockchain(e.target.value)}>
+              <option value="SOL">Solana (SOL)</option>
+              <option value="MATIC">Polygon (MATIC)</option>
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="label">Wallet Address</label>
+            <div className="flex gap-2">
+              <input type="text" className="input" placeholder="Enter address" value={newAddr} onChange={e => setNewAddr(e.target.value)} required />
+              <button type="submit" className="btn btn-primary whitespace-nowrap">Add Wallet</button>
+            </div>
+          </div>
+        </form>
         
         <h3 className="text-lg font-semibold mb-4 text-[#ededed]">Connected Wallets</h3>
         {loading ? <div className="text-[#888]">Loading...</div> : (
@@ -764,29 +822,72 @@ function WalletsTab() {
                   <th className="py-3 px-4 font-semibold">Address</th>
                   <th className="py-3 px-4 font-semibold">Blockchain</th>
                   <th className="py-3 px-4 font-semibold">Type</th>
-                  <th className="py-3 px-4 font-semibold">Status</th>
                   <th className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#222]">
                 {data.map(w => (
                   <tr key={w.wallet_id} className="hover:bg-[#111] transition-colors">
-                    <td className="py-3 px-4 font-mono text-xs text-[#ededed]">{w.wallet_address || w.circle_wallet_id}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-[#ededed] truncate max-w-[200px]">{w.wallet_address || w.circle_wallet_id}</span>
+                        {payoutWalletId === w.wallet_id && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold uppercase">Primary Payout</span>}
+                      </div>
+                    </td>
                     <td className="py-3 px-4 text-[#888]">{w.blockchain}</td>
                     <td className="py-3 px-4 text-[#888]">{w.wallet_type}</td>
-                    <td className="py-3 px-4">
-                      {w.active ? <span className="text-emerald-500 font-medium">Active</span> : <span className="text-red-500 font-medium">Inactive</span>}
-                    </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right space-x-2">
+                      {payoutWalletId !== w.wallet_id && (
+                        <button className="text-xs text-blue-400 hover:text-blue-300 font-medium" onClick={() => handleSetPayout(w.wallet_id)}>Set Primary</button>
+                      )}
                       <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(w.wallet_id)}>Remove</button>
                     </td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="5" className="py-6 text-center text-[#888]">No wallets connected.</td></tr>}
+                {data.length === 0 && <tr><td colSpan="4" className="py-6 text-center text-[#888]">No wallets connected.</td></tr>}
               </tbody>
             </table>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">Payout History</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead className="bg-[#111]">
+              <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
+                <th className="py-3 px-4 font-semibold">Date</th>
+                <th className="py-3 px-4 font-semibold">Amount</th>
+                <th className="py-3 px-4 font-semibold">Data (GB)</th>
+                <th className="py-3 px-4 font-semibold">Status</th>
+                <th className="py-3 px-4 font-semibold text-right">Transaction</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#222]">
+              {payouts.map(p => (
+                <tr key={p.payment_id} className="hover:bg-[#111] transition-colors">
+                  <td className="py-3 px-4 text-[#888]">{new Date(p.create_time).toLocaleDateString()}</td>
+                  <td className="py-3 px-4 font-bold text-[#0070f3]">
+                    ${((p.payout_nano_cents + p.subsidy_payout_nano_cents + (p.reliability_subsidy_nano_cents || 0)) / 1e9).toFixed(2)}
+                  </td>
+                  <td className="py-3 px-4 text-[#888]">{(p.payout_byte_count / 1e9).toFixed(2)} GB</td>
+                  <td className="py-3 px-4">
+                    {p.completed ? <span className="text-emerald-500">Completed</span> : p.canceled ? <span className="text-red-500">Canceled</span> : <span className="text-yellow-500">Pending</span>}
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    {p.tx_hash ? (
+                      <a href={p.blockchain === 'SOL' ? `https://solscan.io/tx/${p.tx_hash}` : `https://polygonscan.com/tx/${p.tx_hash}`} target="_blank" className="text-[#0070f3] hover:underline font-mono text-xs">
+                        {p.tx_hash.slice(0, 8)}...
+                      </a>
+                    ) : <span className="text-[#444]">-</span>}
+                  </td>
+                </tr>
+              ))}
+              {payouts.length === 0 && <tr><td colSpan="5" className="py-6 text-center text-[#888]">No payouts found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

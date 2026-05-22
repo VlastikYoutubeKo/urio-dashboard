@@ -186,8 +186,73 @@ def remove_wallet(jwt_token, wallet_id):
     if not jwt_token: return False, "Auth error"
     headers = {"Authorization": f"Bearer {jwt_token}"}
     resp = request_with_retry("post", f"{UR_API_BASE}/account/wallets/remove", headers=headers, json={"wallet_id": wallet_id})
-    if resp and resp.status_code == 200: return True, "Removed"
-    return False, "Failed"
+    if resp and resp.status_code == 200:
+        return True, "Removed"
+    return False, "Failed to remove wallet"
+
+def fetch_wallet_balance(jwt_token):
+    if not jwt_token: return None
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("get", f"{UR_API_BASE}/wallet/balance", headers=headers)
+    if not resp or resp.status_code != 200: return None
+    return resp.json().get("wallet_info")
+
+def validate_wallet_address(jwt_token, address):
+    if not jwt_token: return False, "Auth error"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("post", f"{UR_API_BASE}/wallet/validate-address", headers=headers, json={"address": address})
+    if resp and resp.status_code == 200:
+        return resp.json().get("valid", False), "Success"
+    return False, "Validation failed"
+
+def init_circle_wallet(jwt_token):
+    if not jwt_token: return False, "Auth error"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("post", f"{UR_API_BASE}/wallet/circle-init", headers=headers)
+    if resp and resp.status_code == 200:
+        return True, resp.json()
+    return False, "Initialization failed"
+
+def transfer_out_circle(jwt_token, to_address, amount_nano_cents):
+    if not jwt_token: return False, "Auth error"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    payload = {
+        "to_address": to_address,
+        "amount_usdc_nano_cents": amount_nano_cents,
+        "terms": True
+    }
+    resp = request_with_retry("post", f"{UR_API_BASE}/wallet/circle-transfer-out", headers=headers, json=payload)
+    if resp and resp.status_code == 200:
+        return True, resp.json()
+    return False, "Transfer failed"
+
+def fetch_payout_wallet(jwt_token):
+    if not jwt_token: return None
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("get", f"{UR_API_BASE}/account/payout-wallet", headers=headers)
+    if not resp or resp.status_code != 200: return None
+    return resp.json().get("wallet_id")
+
+def set_payout_wallet(jwt_token, wallet_id):
+    if not jwt_token: return False, "Auth error"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("post", f"{UR_API_BASE}/account/payout-wallet", headers=headers, json={"wallet_id": wallet_id})
+    if resp and resp.status_code == 200:
+        return True, "Payout wallet set"
+    return False, "Failed to set payout wallet"
+
+def add_account_wallet(jwt_token, blockchain, address):
+    if not jwt_token: return False, "Auth error"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    payload = {
+        "blockchain": blockchain,
+        "wallet_address": address,
+        "default_token_type": "USDC"
+    }
+    resp = request_with_retry("post", f"{UR_API_BASE}/account/wallet", headers=headers, json=payload)
+    if resp and resp.status_code == 200:
+        return True, resp.json().get("wallet_id")
+    return False, "Failed to add wallet"
 
 def set_device_provide_mode(jwt_token, client_id, provide_mode):
     if not jwt_token: return False, "Auth error"

@@ -471,8 +471,91 @@ from backend.ur_api import (
     unlink_referral_network, fetch_blocked_locations, block_location, 
     unblock_location, set_device_name, fetch_associations, redeem_balance_code, 
     fetch_provider_stats, fetch_preferences, set_preferences, send_feedback, 
-    fetch_90_day_stats, fetch_hello
+    fetch_90_day_stats, fetch_hello, fetch_wallet_balance, validate_wallet_address,
+    init_circle_wallet, transfer_out_circle, fetch_payout_wallet, set_payout_wallet,
+    add_account_wallet
 )
+
+@api_bp.route('/dashboard/wallet/balance', methods=['GET'])
+@login_required
+def get_wallet_balance():
+    account_id = request.args.get('account_id')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    return jsonify(fetch_wallet_balance(jwt) if jwt else {})
+
+@api_bp.route('/dashboard/wallet/validate', methods=['POST'])
+@login_required
+def dashboard_validate_address():
+    data = request.json
+    account_id = data.get('account_id')
+    address = data.get('address')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    if not jwt: return jsonify({"error": "Auth failed"}), 401
+    valid, msg = validate_wallet_address(jwt, address)
+    return jsonify({"valid": valid, "message": msg})
+
+@api_bp.route('/dashboard/wallet/circle/init', methods=['POST'])
+@login_required
+def dashboard_circle_init():
+    data = request.json
+    account_id = data.get('account_id')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    if not jwt: return jsonify({"error": "Auth failed"}), 401
+    success, res = init_circle_wallet(jwt)
+    if success: return jsonify(res)
+    return jsonify({"error": res}), 400
+
+@api_bp.route('/dashboard/wallet/circle/transfer', methods=['POST'])
+@login_required
+def dashboard_circle_transfer():
+    data = request.json
+    account_id = data.get('account_id')
+    address = data.get('address')
+    amount = data.get('amount') # in nano cents
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    if not jwt: return jsonify({"error": "Auth failed"}), 401
+    success, res = transfer_out_circle(jwt, address, amount)
+    if success: return jsonify(res)
+    return jsonify({"error": res}), 400
+
+@api_bp.route('/dashboard/payout-wallet', methods=['GET'])
+@login_required
+def get_payout_wallet_id():
+    account_id = request.args.get('account_id')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    return jsonify({"wallet_id": fetch_payout_wallet(jwt) if jwt else None})
+
+@api_bp.route('/dashboard/payout-wallet/set', methods=['POST'])
+@login_required
+def dashboard_set_payout_wallet():
+    data = request.json
+    account_id = data.get('account_id')
+    wallet_id = data.get('wallet_id')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    if not jwt: return jsonify({"error": "Auth failed"}), 401
+    success, res = set_payout_wallet(jwt, wallet_id)
+    if success: return jsonify({"message": res})
+    return jsonify({"error": res}), 400
+
+@api_bp.route('/dashboard/wallets/add', methods=['POST'])
+@login_required
+def dashboard_add_wallet():
+    data = request.json
+    account_id = data.get('account_id')
+    blockchain = data.get('blockchain')
+    address = data.get('address')
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    if not jwt: return jsonify({"error": "Auth failed"}), 401
+    success, res = add_account_wallet(jwt, blockchain, address)
+    if success: return jsonify({"wallet_id": res})
+    return jsonify({"error": res}), 400
 
 @api_bp.route('/preferences', methods=['GET'])
 @login_required
