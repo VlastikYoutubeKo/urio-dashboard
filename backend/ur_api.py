@@ -47,8 +47,8 @@ def get_jwt_from_credentials(user, password):
             headers={"Content-Type": "application/json"},
             json={"user_auth": user, "password": password},
         )
-        if not resp:
-            raise RuntimeError("API request failed after multiple retries.")
+        if not resp or resp.status_code != 200:
+            raise RuntimeError("API request failed.")
         data = resp.json()
         token = data.get("network", {}).get("by_jwt")
         if not token:
@@ -85,7 +85,6 @@ def fetch_account_details(jwt_token):
     headers = {"Authorization": f"Bearer {jwt_token}"}
     details = {}
 
-    # Multi-endpoint fetching for account dashboard
     points_resp = request_with_retry("get", f"{UR_API_BASE}/account/points", headers=headers)
     if points_resp and points_resp.status_code == 200:
         details['points'] = sum(p.get('point_value', 0) for p in points_resp.json().get("network_points", []))
@@ -140,8 +139,6 @@ def remove_device(jwt_token, client_id):
     headers = {"Authorization": f"Bearer {jwt_token}"}
     resp = request_with_retry("post", f"{UR_API_BASE}/network/remove-client", headers=headers, json={"client_id": client_id})
     if resp and resp.status_code == 200:
-        data = resp.json()
-        if data.get("error"): return False, data["error"].get("message", "Error")
         return True, "Removed"
     return False, "Failed"
 
@@ -163,16 +160,15 @@ def create_api_key(jwt_token, name):
     headers = {"Authorization": f"Bearer {jwt_token}"}
     resp = request_with_retry("post", f"{UR_API_BASE}/account/api-key", headers=headers, json={"name": name})
     if resp and resp.status_code == 200:
-        data = resp.json()
-        if data.get("error"): return False, data["error"].get("message", "Error")
-        return True, data
+        return True, resp.json()
     return False, "Failed"
 
 def remove_api_key(jwt_token, key_id):
     if not jwt_token: return False, "Auth error"
     headers = {"Authorization": f"Bearer {jwt_token}"}
     resp = request_with_retry("post", f"{UR_API_BASE}/account/api-key/remove", headers=headers, json={"id": key_id})
-    if resp and resp.status_code == 200: return True, "Removed"
+    if resp and resp.status_code == 200:
+        return True, "Removed"
     return False, "Failed"
 
 def fetch_wallets(jwt_token):
@@ -188,7 +184,7 @@ def remove_wallet(jwt_token, wallet_id):
     resp = request_with_retry("post", f"{UR_API_BASE}/account/wallets/remove", headers=headers, json={"wallet_id": wallet_id})
     if resp and resp.status_code == 200:
         return True, "Removed"
-    return False, "Failed to remove wallet"
+    return False, "Failed"
 
 def fetch_wallet_balance(jwt_token):
     if not jwt_token: return None
@@ -203,7 +199,7 @@ def validate_wallet_address(jwt_token, address):
     resp = request_with_retry("post", f"{UR_API_BASE}/wallet/validate-address", headers=headers, json={"address": address})
     if resp and resp.status_code == 200:
         return resp.json().get("valid", False), "Success"
-    return False, "Validation failed"
+    return False, "Failed"
 
 def init_circle_wallet(jwt_token):
     if not jwt_token: return False, "Auth error"
@@ -211,20 +207,16 @@ def init_circle_wallet(jwt_token):
     resp = request_with_retry("post", f"{UR_API_BASE}/wallet/circle-init", headers=headers)
     if resp and resp.status_code == 200:
         return True, resp.json()
-    return False, "Initialization failed"
+    return False, "Failed"
 
 def transfer_out_circle(jwt_token, to_address, amount_nano_cents):
     if not jwt_token: return False, "Auth error"
     headers = {"Authorization": f"Bearer {jwt_token}"}
-    payload = {
-        "to_address": to_address,
-        "amount_usdc_nano_cents": amount_nano_cents,
-        "terms": True
-    }
+    payload = {"to_address": to_address, "amount_usdc_nano_cents": amount_nano_cents, "terms": True}
     resp = request_with_retry("post", f"{UR_API_BASE}/wallet/circle-transfer-out", headers=headers, json=payload)
     if resp and resp.status_code == 200:
         return True, resp.json()
-    return False, "Transfer failed"
+    return False, "Failed"
 
 def fetch_payout_wallet(jwt_token):
     if not jwt_token: return None
@@ -238,21 +230,17 @@ def set_payout_wallet(jwt_token, wallet_id):
     headers = {"Authorization": f"Bearer {jwt_token}"}
     resp = request_with_retry("post", f"{UR_API_BASE}/account/payout-wallet", headers=headers, json={"wallet_id": wallet_id})
     if resp and resp.status_code == 200:
-        return True, "Payout wallet set"
-    return False, "Failed to set payout wallet"
+        return True, "Success"
+    return False, "Failed"
 
 def add_account_wallet(jwt_token, blockchain, address):
     if not jwt_token: return False, "Auth error"
     headers = {"Authorization": f"Bearer {jwt_token}"}
-    payload = {
-        "blockchain": blockchain,
-        "wallet_address": address,
-        "default_token_type": "USDC"
-    }
+    payload = {"blockchain": blockchain, "wallet_address": address, "default_token_type": "USDC"}
     resp = request_with_retry("post", f"{UR_API_BASE}/account/wallet", headers=headers, json=payload)
     if resp and resp.status_code == 200:
         return True, resp.json().get("wallet_id")
-    return False, "Failed to add wallet"
+    return False, "Failed"
 
 def set_device_provide_mode(jwt_token, client_id, provide_mode):
     if not jwt_token: return False, "Auth error"
@@ -260,15 +248,8 @@ def set_device_provide_mode(jwt_token, client_id, provide_mode):
     payload = {"client_id": client_id, "provide_mode": provide_mode}
     resp = request_with_retry("post", f"{UR_API_BASE}/device/set-provide", headers=headers, json=payload)
     if resp and resp.status_code == 200:
-        data = resp.json()
-        if data.get("error"): return False, data["error"].get("message", "Error")
         return True, "Success"
-    elif resp and resp.status_code == 400:
-        try:
-            msg = resp.json().get("error", {}).get("message", "Bad Request")
-            return False, msg
-        except: pass
-    return False, f"Failed (Status {resp.status_code if resp else 'Unknown'})"
+    return False, "Failed"
 
 def set_ranking_visibility(jwt_token, is_public):
     if not jwt_token: return False, "Auth error"
@@ -346,6 +327,13 @@ def fetch_preferences(jwt_token):
     resp = request_with_retry("get", f"{UR_API_BASE}/preferences", headers=headers)
     if not resp or resp.status_code != 200: return {}
     return resp.json()
+
+def set_preferences(jwt_token, product_updates):
+    if not jwt_token: return False, "Auth error"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("post", f"{UR_API_BASE}/preferences/set-preferences", headers=headers, json={"product_updates": product_updates})
+    if resp and resp.status_code == 200: return True, "Success"
+    return False, "Failed"
 
 def send_feedback(jwt_token, star_count, text):
     if not jwt_token: return False, "Auth error"
