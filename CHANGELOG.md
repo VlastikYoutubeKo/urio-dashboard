@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **About Project Page (`/about`):** An educational page explaining **ur.io (UrNetwork)** node sandboxing and residential proxy sharing, featuring modern custom vector badges and interactive accordion FAQs.
 - **Browser Language Auto-Detection:** Automatically reads the client's system languages on first visit to default to Czech/Slovak (`cs`) or fallback to English (`en`).
 - **Unified Provider Tracking Scheduler:** Configured a cron-based APScheduler background polling job in `backend/scheduler.py` to collect snapshots hourly and clean records older than 90 days.
+- **Changelog Button in About View:** Added a direct "Zápis změn (Changelog)" button to the **About Project** page linking to this repository's changelog, making recent release summaries easily accessible from inside the application.
 
 ### Changed
 - **Full App-Wide Bilingual Localization (CS/EN):** Replaced hardcoded English text blocks with a dynamic translation state (`lang`) across all pages, forms, tables, and settings, resolving the previous language mix:

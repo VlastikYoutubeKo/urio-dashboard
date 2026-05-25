@@ -75,6 +75,15 @@ export default function AboutProject({ lang = 'cs' }) {
               {t("Official ur.io Website", "Oficiální web ur.io")}
               <ArrowRight className="w-4 h-4" />
             </a>
+            <a 
+              href="https://github.com/VlastikYoutubeKo/urio-dashboard/blob/main/CHANGELOG.md" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-5 py-2.5 rounded-lg bg-[#111] text-gray-300 border border-[#333] hover:border-[#555] hover:text-white font-semibold transition-all flex items-center gap-2 text-sm"
+            >
+              {t("Changelog & Updates", "Zápis změn (Changelog)")}
+              <BookOpen className="w-4 h-4" />
+            </a>
           </div>
         </div>
       </div>
