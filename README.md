@@ -11,6 +11,8 @@ A modern, SaaS-grade dashboard for tracking and managing bandwidth usage on the 
 - **Interactive Global Map:** Visualize provider distribution worldwide with an interactive country density map.
 - **Robust Caching:** Built-in backend caching (TTLCache) prevents API rate-limiting and ensures high performance.
 - **Management Tools:** Easily rename devices, update provide modes, and manage blocked locations directly from the dashboard.
+- **Bilingual Localization:** Full Czech and English language support with automatic browser locale detection and instant dynamic toggling.
+- **Rich Discord Embed Previews:** Optimized OpenGraph and Twitter Card metadata for premium, visual link previews when shared on Discord.
 
 ## Tech Stack
 
