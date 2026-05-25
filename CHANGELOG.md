@@ -29,5 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Payout FAQ Alignment:** Corrected payout text in `AboutProject.jsx` to state that earnings are paid out **exclusively in USDC on the Solana blockchain**.
 
 ### Fixed
-- **Webhook Rescheduling:** Shifted `periodic_summary_job` from random `:05` and `:35` minutes to run precisely at `:00`, `:15`, `:30`, and `:45` of every hour, matching the core stats logging schedule.
+- **Webhook Interval Shifting:** Swapped the elapsed time delta calculation with a bulletproof clock-aligned cron trigger check. Periodic webhooks will now trigger exactly at the clock marks (e.g. `:00` and `:30` for 30m, `:00` for 1h) without shifting or drifting due to server restarts.
 - **Vite React Frontend Syntax:** Resolved a redundant closing bracket duplicate (`);`) inside `frontend/src/App.jsx` that was breaking production builds.
+
+### Added
+- **Vite/HTML Head Metadata:** Added full OpenGraph/Twitter Card tags and `og:site_name` metadata to `index.html` to ensure links shared on Discord show a gorgeous card embed preview.

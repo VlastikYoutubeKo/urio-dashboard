@@ -156,13 +156,37 @@ def init_scheduler(app):
             accounts = Account.query.filter_by(is_active=True).all()
             
             for webhook in webhooks:
-                # Determine interval in minutes
+                # Direct clock-aligned trigger checks
+                should_trigger = False
+                current_minute = now.minute
+                current_hour = now.hour
+                
+                # Determine interval in minutes for fallback
                 interval_map = {"30m": 30, "1h": 60, "12h": 12 * 60, "1d": 24 * 60}
                 minutes = interval_map.get(webhook.summary_interval, 60)
                 
-                last_sent = webhook.last_summary_at or (now - datetime.timedelta(days=1))
-                if (now - last_sent).total_seconds() / 60 < (minutes - 2): # Small buffer
+                if webhook.summary_interval == "30m":
+                    if current_minute in (0, 30):
+                        should_trigger = True
+                elif webhook.summary_interval == "1h":
+                    if current_minute == 0:
+                        should_trigger = True
+                elif webhook.summary_interval == "12h":
+                    if current_hour in (0, 12) and current_minute == 0:
+                        should_trigger = True
+                elif webhook.summary_interval == "1d":
+                    if current_hour == 0 and current_minute == 0:
+                        should_trigger = True
+                else:
+                    # Fallback to time delta if custom or not matched
+                    last_sent = webhook.last_summary_at or (now - datetime.timedelta(days=1))
+                    if (now - last_sent).total_seconds() / 60 >= (minutes - 2):
+                        should_trigger = True
+                
+                if not should_trigger:
                     continue
+
+                logging.info(f"Triggering periodic summary ({webhook.summary_interval}) for webhook ID {webhook.id}")
 
                 for account in accounts:
                     s30m_p, s30m_u = get_traffic_delta(account.id, 30)
