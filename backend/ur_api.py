@@ -143,10 +143,14 @@ def remove_device(jwt_token, client_id):
     return False, "Failed"
 
 @cached(cache=locations_cache)
-def fetch_provider_locations():
-    resp = request_with_retry("get", f"{UR_API_BASE}/network/provider-locations")
+def fetch_provider_locations(jwt_token=None):
+    headers = {}
+    if jwt_token:
+        headers["Authorization"] = f"Bearer {jwt_token}"
+    resp = request_with_retry("get", f"{UR_API_BASE}/network/provider-locations", headers=headers)
     if not resp or resp.status_code != 200: return None
     return resp.json()
+
 
 def fetch_api_keys(jwt_token):
     if not jwt_token: return []

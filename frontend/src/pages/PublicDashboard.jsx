@@ -5,12 +5,15 @@ import {
 import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
-export default function PublicDashboard() {
+export default function PublicDashboard({ lang = 'cs' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState(null);
   const [geoData, setGeoData] = useState(null);
   const [stats90, setStats90] = useState(null);
+
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
 
   useEffect(() => {
     Promise.all([
@@ -33,7 +36,7 @@ export default function PublicDashboard() {
   }, []);
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div>;
-  if (!data) return <div className="text-center py-10 text-red-500">Failed to load data.</div>;
+  if (!data) return <div className="text-center py-10 text-red-500">{t("Failed to load data.", "Nepodařilo se načíst data.")}</div>;
 
   const chartData = data.chart_data.labels.map((label, idx) => ({
     time: label,
@@ -83,7 +86,7 @@ export default function PublicDashboard() {
   };
 
   const onEachFeature = (feature, layer) => {
-    layer.bindTooltip(`<b>${feature.properties.name}</b><br/>${feature.properties.density || 0} providers`);
+    layer.bindTooltip(`<b>${feature.properties.name}</b><br/>${feature.properties.density || 0} ${t("providers", "poskytovatelů")}`);
     layer.on({
       mouseover: (e) => {
         const l = e.target;
@@ -98,17 +101,17 @@ export default function PublicDashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <h1 className="text-3xl font-bold tracking-tight">Public Dashboard</h1>
+      <h1 className="text-3xl font-bold tracking-tight">{t("Public Dashboard", "Veřejný přehled")}</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Total Paid Data</div><div className="text-3xl font-bold tracking-tight">{data.combined.paid_gb.toFixed(3)} GB</div></div>
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Total Unpaid Data</div><div className="text-3xl font-bold tracking-tight">{data.combined.unpaid_gb.toFixed(3)} GB</div></div>
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Active Accounts</div><div className="text-3xl font-bold tracking-tight">{data.active_accounts}</div></div>
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Earnings (30 Days)</div><div className="text-3xl font-bold tracking-tight">${data.monthly_earnings.toFixed(2)}</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Total Paid Data", "Celkem vyplacená data")}</div><div className="text-3xl font-bold tracking-tight">{data.combined.paid_gb.toFixed(3)} GB</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Total Unpaid Data", "Celkem nevyplacená data")}</div><div className="text-3xl font-bold tracking-tight">{data.combined.unpaid_gb.toFixed(3)} GB</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Active Accounts", "Aktivní účty")}</div><div className="text-3xl font-bold tracking-tight">{data.active_accounts}</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Earnings (30 Days)", "Výdělky (30 dní)")}</div><div className="text-3xl font-bold tracking-tight">${data.monthly_earnings.toFixed(2)}</div></div>
       </div>
 
       <div className="card">
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">Total Data Provided (GB)</h3>
+        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Total Data Provided (GB)", "Celkem poskytnutá data (GB)")}</h3>
         <div className="h-[400px]">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -128,7 +131,7 @@ export default function PublicDashboard() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-[#888] text-center mt-20">Not enough data to display.</p>
+            <p className="text-[#888] text-center mt-20">{t("Not enough data to display.", "Nedostatek dat pro zobrazení.")}</p>
           )}
         </div>
       </div>
@@ -145,7 +148,7 @@ export default function PublicDashboard() {
 
             return (
               <div key={acc} className="card">
-                <h3 className="text-sm font-semibold mb-4 text-[#888]"><span className="text-[#ededed]">{acc}</span> Data</h3>
+                <h3 className="text-sm font-semibold mb-4 text-[#888]"><span className="text-[#ededed]">{acc}</span> {t("Data", "Data")}</h3>
                 <div className="h-[250px]">
                   {cData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -158,7 +161,7 @@ export default function PublicDashboard() {
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
-                    <p className="text-[#888] text-center mt-20">Not enough data to display.</p>
+                    <p className="text-[#888] text-center mt-20">{t("Not enough data to display.", "Nedostatek dat pro zobrazení.")}</p>
                   )}
                 </div>
               </div>
@@ -168,7 +171,7 @@ export default function PublicDashboard() {
       )}
 
       <div className="card">
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">Network Growth (90 Days - GB)</h3>
+        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Network Growth (90 Days - GB)", "Růst sítě (90 dní - GB)")}</h3>
         <div className="h-[400px]">
           {longTermData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -181,15 +184,15 @@ export default function PublicDashboard() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-[#888] text-center mt-20">Loading 90-day historical data...</p>
+            <p className="text-[#888] text-center mt-20">{t("Loading 90-day historical data...", "Načítání 90denních historických dat...")}</p>
           )}
         </div>
       </div>
 
       <div className="card p-0 overflow-hidden">
         <div className="p-6 border-b border-[#333]">
-          <h3 className="text-lg font-semibold text-[#ededed]">Global Provider Distribution</h3>
-          <p className="text-sm text-[#888] mt-1">Density map of network providers worldwide.</p>
+          <h3 className="text-lg font-semibold text-[#ededed]">{t("Global Provider Distribution", "Globální distribuce poskytovatelů")}</h3>
+          <p className="text-sm text-[#888] mt-1">{t("Density map of network providers worldwide.", "Mapa hustoty poskytovatelů sítě po celém světě.")}</p>
         </div>
         <div className="h-[500px] w-full bg-[#000] filter-invert">
           <MapContainer center={[20, 10]} zoom={2} minZoom={2} maxZoom={6} style={{ height: '100%', width: '100%', background: '#000' }}>

@@ -3,7 +3,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
-function OverviewTab() {
+function OverviewTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('combined');
@@ -18,7 +20,7 @@ function OverviewTab() {
   }, []);
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div>;
-  if (!data) return <div className="text-center py-10 text-red-500">Failed to load data.</div>;
+  if (!data) return <div className="text-center py-10 text-red-500">{t("Failed to load data.", "Nepodařilo se načíst data.")}</div>;
 
   const combinedData = data.combined_chart.labels.map((label, idx) => ({
     time: label,
@@ -29,15 +31,15 @@ function OverviewTab() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Total Paid Data</div><div className="text-3xl font-bold tracking-tight">{data.combined.paid_gb.toFixed(3)} GB</div></div>
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Total Unpaid Data</div><div className="text-3xl font-bold tracking-tight">{data.combined.unpaid_gb.toFixed(3)} GB</div></div>
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Total Earnings</div><div className="text-3xl font-bold tracking-tight">${data.total_earnings.toFixed(2)}</div></div>
-        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">Active Accounts</div><div className="text-3xl font-bold tracking-tight">{data.active_accounts}</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Total Paid Data", "Celkem vyplacená data")}</div><div className="text-3xl font-bold tracking-tight">{data.combined.paid_gb.toFixed(3)} GB</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Total Unpaid Data", "Celkem nevyplacená data")}</div><div className="text-3xl font-bold tracking-tight">{data.combined.unpaid_gb.toFixed(3)} GB</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Total Earnings", "Celkové výdělky")}</div><div className="text-3xl font-bold tracking-tight">${data.total_earnings.toFixed(2)}</div></div>
+        <div className="card hover:border-[#666]"><div className="text-xs font-semibold text-[#888] uppercase mb-1">{t("Active Accounts", "Aktivní účty")}</div><div className="text-3xl font-bold tracking-tight">{data.active_accounts}</div></div>
       </div>
       <div className="card">
         <div className="flex gap-3 mb-6">
-          <button className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${viewMode === 'combined' ? 'bg-[#ededed] text-black' : 'bg-[#111] text-[#888] hover:text-white border border-[#333]'}`} onClick={() => setViewMode('combined')}>Combined</button>
-          <button className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${viewMode === 'individual' ? 'bg-[#ededed] text-black' : 'bg-[#111] text-[#888] hover:text-white border border-[#333]'}`} onClick={() => setViewMode('individual')}>Individual</button>
+          <button className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${viewMode === 'combined' ? 'bg-[#ededed] text-black' : 'bg-[#111] text-[#888] hover:text-white border border-[#333]'}`} onClick={() => setViewMode('combined')}>{t("Combined", "Sloučené")}</button>
+          <button className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${viewMode === 'individual' ? 'bg-[#ededed] text-black' : 'bg-[#111] text-[#888] hover:text-white border border-[#333]'}`} onClick={() => setViewMode('individual')}>{t("Individual", "Jednotlivé")}</button>
         </div>
         {viewMode === 'combined' && (
           <div className="h-[400px]">
@@ -63,7 +65,7 @@ function OverviewTab() {
                   <Line type="monotone" dataKey="Unpaid" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{r: 6}} fill="url(#colorUnpaid)" />
                 </LineChart>
               </ResponsiveContainer>
-            ) : <p className="text-center mt-20 text-[#888]">Not enough data to display.</p>}
+            ) : <p className="text-center mt-20 text-[#888]">{t("Not enough data to display.", "Nedostatek dat pro zobrazení.")}</p>}
           </div>
         )}
         {viewMode === 'individual' && (
@@ -74,7 +76,7 @@ function OverviewTab() {
               const color = colors[idx % colors.length];
               return (
                 <div key={acc} className="mt-4 border border-[#333] rounded-lg p-4 bg-[#111]">
-                  <h3 className="text-sm font-semibold mb-4 text-[#888]"><span className="text-[#ededed]">{acc}</span> Data</h3>
+                  <h3 className="text-sm font-semibold mb-4 text-[#888]"><span className="text-[#ededed]">{acc}</span> {t("Data", "Data")}</h3>
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={cData}>
@@ -96,7 +98,9 @@ function OverviewTab() {
   );
 }
 
-function AccountInfoTab() {
+function AccountInfoTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedAcc, setSelectedAcc] = useState('all');
@@ -127,7 +131,7 @@ function AccountInfoTab() {
   };
 
   const handleSetReferral = async () => {
-    const code = prompt("Enter the referral code of the network that referred you:");
+    const code = prompt(t("Enter the referral code of the network that referred you:", "Zadejte doporučující kód sítě, která vás doporučila:"));
     if(!code) return;
     const res = await fetch('/api/dashboard/network/set-referral', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -141,7 +145,7 @@ function AccountInfoTab() {
   };
   
   const handleUnlinkReferral = async () => {
-    if(!confirm("Unlink referral network?")) return;
+    if(!confirm(t("Unlink referral network?", "Odpojit doporučující síť?"))) return;
     const res = await fetch('/api/dashboard/network/unlink-referral', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account_id: selectedAcc })
@@ -154,7 +158,7 @@ function AccountInfoTab() {
   };
 
   const handleRedeemCode = async () => {
-    const secret = prompt("Enter your balance code secret:");
+    const secret = prompt(t("Enter your balance code secret:", "Zadejte tajný kód zůstatku:"));
     if(!secret) return;
     const res = await fetch('/api/dashboard/subscription/redeem', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -193,43 +197,43 @@ function AccountInfoTab() {
   };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div>;
-  if (!data) return <div className="text-center py-10 text-red-500">Failed to load data.</div>;
+  if (!data) return <div className="text-center py-10 text-red-500">{t("Failed to load data.", "Nepodařilo se načíst data.")}</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-2">
         <select className="input max-w-xs" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
-          <option value="all">All Accounts</option>
+          <option value="all">{t("All Accounts", "Všechny účty")}</option>
           {data.accounts?.map(acc => (
             <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
           ))}
         </select>
         {selectedAcc !== 'all' && (
-          <button onClick={handleRedeemCode} className="btn btn-secondary text-xs">Redeem Balance Code</button>
+          <button onClick={handleRedeemCode} className="btn btn-secondary text-xs">{t("Redeem Balance Code", "Uplatnit kód zůstatku")}</button>
         )}
       </div>
 
       {selectedAcc !== 'all' && data.account_details && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           <div className="card bg-gradient-to-br from-[#111] to-[#0a0a0a]">
-            <div className="text-xs font-semibold text-[#888] uppercase mb-2">Total Earnings & Pending</div>
+            <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Total Earnings & Pending", "Celkové a čekající výdělky")}</div>
             <div className="text-3xl font-bold text-[#0070f3]">
               ${data.total_earnings?.toFixed(2) || '0.00'}
             </div>
             <div className="text-xs text-[#888] mt-2 flex justify-between items-center">
-              <span>+ ${data.account_details.approximate_payments?.toFixed(5) || '0.00'} pending</span>
+              <span>+ ${data.account_details.approximate_payments?.toFixed(5) || '0.00'} {t("pending", "čeká")}</span>
             </div>
           </div>
           <div className="card">
-            <div className="text-xs font-semibold text-[#888] uppercase mb-2">Network Score</div>
+            <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Network Score", "Skóre sítě")}</div>
             <div className="text-3xl font-bold">{data.account_details.points || '0'} <span className="text-sm font-medium text-[#666]">pts</span></div>
             {data.account_details.reliability?.mean_reliability_weight && (
-              <div className="text-xs text-[#888] mt-2">Reliability: {(data.account_details.reliability.mean_reliability_weight * 5).toFixed(2)}%</div>
+              <div className="text-xs text-[#888] mt-2">{t("Reliability:", "Spolehlivost:")} {(data.account_details.reliability.mean_reliability_weight * 5).toFixed(2)}%</div>
             )}
           </div>
           <div className="card">
             <div className="flex justify-between items-start">
-              <div className="text-xs font-semibold text-[#888] uppercase mb-2">Global Rank</div>
+              <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Global Rank", "Globální pořadí")}</div>
               <button onClick={toggleVisibility} className="text-[10px] bg-[#222] px-2 py-0.5 rounded text-[#888] hover:text-[#ededed]">
                 {data.account_details.ranking?.leaderboard_public ? 'Public' : 'Hidden'}
               </button>
@@ -237,17 +241,17 @@ function AccountInfoTab() {
             <div className="text-3xl font-bold">#{data.account_details.ranking?.leaderboard_rank || 'N/A'}</div>
           </div>
           <div className="card">
-            <div className="text-xs font-semibold text-[#888] uppercase mb-2">Referrals</div>
+            <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Referrals", "Doporučení")}</div>
             <div className="text-3xl font-bold">{data.account_details.referrals?.total_referrals || '0'}</div>
-            <div className="text-xs text-[#888] mt-2 font-mono bg-[#111] p-1 rounded inline-block">Code: {data.account_details.referrals?.referral_code?.slice(0,8) || 'N/A'}</div>
+            <div className="text-xs text-[#888] mt-2 font-mono bg-[#111] p-1 rounded inline-block">{t("Code:", "Kód:")} {data.account_details.referrals?.referral_code?.slice(0,8) || 'N/A'}</div>
             <div className="mt-2 text-xs border-t border-[#333] pt-2">
               {data.account_details.referral_network?.name ? (
                 <div className="flex justify-between items-center">
-                  <span className="text-[#888]">Referred by: <span className="text-[#ededed]">{data.account_details.referral_network.name}</span></span>
-                  <button onClick={handleUnlinkReferral} className="text-red-500 hover:text-red-400">Unlink</button>
+                  <span className="text-[#888]">{t("Referred by:", "Doporučeno od:")} <span className="text-[#ededed]">{data.account_details.referral_network.name}</span></span>
+                  <button onClick={handleUnlinkReferral} className="text-red-500 hover:text-red-400">{t("Unlink", "Odpojit")}</button>
                 </div>
               ) : (
-                <button onClick={handleSetReferral} className="text-[#0070f3] hover:underline">Set Referral Network</button>
+                <button onClick={handleSetReferral} className="text-[#0070f3] hover:underline">{t("Set Referral Network", "Nastavit doporučující síť")}</button>
               )}
             </div>
           </div>
@@ -287,8 +291,8 @@ function AccountInfoTab() {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-                  <th className="py-3 px-4 font-semibold">Name</th>
-                  <th className="py-3 px-4 font-semibold">Type</th>
+                  <th className="py-3 px-4 font-semibold">{t("Name", "Název")}</th>
+                  <th className="py-3 px-4 font-semibold">{t("Type", "Typ")}</th>
                   <th className="py-3 px-4 font-semibold text-right">Action</th>
                 </tr>
               </thead>
@@ -345,7 +349,9 @@ function AccountInfoTab() {
   );
 }
 
-function DevicesTab() {
+function DevicesTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [devices, setDevices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -401,7 +407,7 @@ function DevicesTab() {
   useEffect(() => { fetchDevices(); }, []);
 
   const handleRemove = async (accId, clientId) => {
-    if (!confirm("Are you sure you want to remove this device?")) return;
+    if (!confirm(t("Are you sure you want to remove this device?", "Opravdu chcete toto zařízení odebrat?"))) return;
     const res = await fetch(`/api/dashboard/devices/remove/${accId}/${clientId}`, { method: 'POST' });
     const data = await res.json();
     if (res.ok) alert(data.message);
@@ -435,7 +441,7 @@ function DevicesTab() {
        setDevices(prev => prev.map(d => d.client_id === clientId ? {...d, provide_mode_str: modeStr} : d));
     } else {
        const data = await res.json();
-       alert(data.error || 'Failed to update mode');
+       alert(data.error || t('Failed to update mode', 'Nepodařilo se aktualizovat režim'));
     }
   };
 
@@ -452,13 +458,13 @@ function DevicesTab() {
     <div className="card p-0 overflow-hidden">
       <div className="p-6 border-b border-[#333] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-[#ededed]">Device Management</h3>
-          <p className="text-sm text-[#888] mt-1">Monitor and manage clients connected to your networks.</p>
+          <h3 className="text-lg font-semibold text-[#ededed]">{t("Device Management", "Správa zařízení")}</h3>
+          <p className="text-sm text-[#888] mt-1">{t("Monitor and manage clients connected to your networks.", "Sledujte a spravujte klienty připojené k vašim sítím.")}</p>
         </div>
         <div className="flex gap-2">
           <input 
             type="text" 
-            placeholder="Search devices..." 
+            placeholder={t("Search devices...", "Hledat zařízení...")} 
             className="input w-64 text-sm"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
@@ -469,12 +475,12 @@ function DevicesTab() {
         <table className="w-full text-left border-collapse text-sm">
           <thead className="bg-[#111]">
             <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-              <th className="py-3 px-6 font-semibold">Account</th>
-              <th className="py-3 px-6 font-semibold">Status</th>
-              <th className="py-3 px-6 font-semibold">Device</th>
-              <th className="py-3 px-6 font-semibold">Client ID</th>
-              <th className="py-3 px-6 font-semibold">Mode</th>
-              <th className="py-3 px-6 font-semibold text-right">Actions</th>
+              <th className="py-3 px-6 font-semibold">{t("Account", "Účet")}</th>
+              <th className="py-3 px-6 font-semibold">{t("Status", "Stav")}</th>
+              <th className="py-3 px-6 font-semibold">{t("Device", "Zařízení")}</th>
+              <th className="py-3 px-6 font-semibold">{t("Client ID", "ID klienta")}</th>
+              <th className="py-3 px-6 font-semibold">{t("Mode", "Režim")}</th>
+              <th className="py-3 px-6 font-semibold text-right">{t("Actions", "Akce")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#222]">
@@ -495,7 +501,7 @@ function DevicesTab() {
                 </td>
                 <td className="py-4 px-6 font-medium text-[#ededed]">
                   <div className="flex items-center gap-2 group">
-                    <span>{dev.device_name || 'Unnamed Device'}</span>
+                    <span>{dev.device_name || t('Unnamed Device', 'Nepojmenované zařízení')}</span>
                     <button 
                       className="text-[#0070f3] opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
                       onClick={async () => {
@@ -509,7 +515,7 @@ function DevicesTab() {
                           else alert((await res.json()).error);
                         }
                       }}
-                    >Rename</button>
+                    >{t("Rename", "Přejmenovat")}</button>
                   </div>
                 </td>
                 <td className="py-4 px-6 font-mono text-xs text-[#888]">{dev.client_id}</td>
@@ -528,13 +534,13 @@ function DevicesTab() {
                   </select>
                 </td>
                 <td className="py-4 px-6 text-right space-x-3">
-                  <button className="text-xs text-[#0070f3] hover:underline font-medium" onClick={() => viewStats(dev)}>Stats</button>
-                  <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(dev.account_id, dev.client_id)}>Remove</button>
+                  <button className="text-xs text-[#0070f3] hover:underline font-medium" onClick={() => viewStats(dev)}>{t("Stats", "Statistiky")}</button>
+                  <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(dev.account_id, dev.client_id)}>{t("Remove", "Odebrat")}</button>
                 </td>
               </tr>
             ))}
             {paginatedDevices.length === 0 && (
-              <tr><td colSpan="6" className="py-12 text-center text-[#888]">No matching devices found.</td></tr>
+              <tr><td colSpan="6" className="py-12 text-center text-[#888]">{t("No matching devices found.", "Nebyla nalezena žádná vyhovující zařízení.")}</td></tr>
             )}
           </tbody>
         </table>
@@ -544,7 +550,7 @@ function DevicesTab() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="card w-full max-w-2xl bg-[#0a0a0a] border-[#333]">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold">Device Insights: {selectedDevice.device_name || 'Unnamed'}</h3>
+              <h3 className="text-xl font-bold">{t("Device Insights:", "Podrobnosti o zařízení:")} {selectedDevice.device_name || 'Unnamed'}</h3>
               <button onClick={() => setSelectedDevice(null)} className="text-[#888] hover:text-white">✕</button>
             </div>
             
@@ -552,11 +558,11 @@ function DevicesTab() {
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 bg-[#111] rounded-lg border border-[#222]">
-                    <div className="text-xs text-[#888] uppercase mb-1">Total Payout (24h)</div>
+                    <div className="text-xs text-[#888] uppercase mb-1">{t("Total Payout (24h)", "Celková výplata (24h)")}</div>
                     <div className="text-2xl font-bold text-[#0070f3]">${deviceStats.payout_last_24h || '0.00'}</div>
                   </div>
                   <div className="p-4 bg-[#111] rounded-lg border border-[#222]">
-                    <div className="text-xs text-[#888] uppercase mb-1">Transfer (24h)</div>
+                    <div className="text-xs text-[#888] uppercase mb-1">{t("Transfer (24h)", "Přenos (24h)")}</div>
                     <div className="text-2xl font-bold">{(deviceStats.transfer_data_last_24h || 0).toFixed(3)} GB</div>
                   </div>
                 </div>
@@ -571,7 +577,7 @@ function DevicesTab() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-                <button onClick={() => setSelectedDevice(null)} className="btn btn-secondary w-full">Close</button>
+                <button onClick={() => setSelectedDevice(null)} className="btn btn-secondary w-full">{t("Close", "Zavřít")}</button>
               </div>
             )}
           </div>
@@ -581,22 +587,21 @@ function DevicesTab() {
       {totalPages > 1 && (
         <div className="p-4 border-t border-[#333] flex items-center justify-between">
           <div className="text-sm text-[#888]">
-            Showing <span className="text-[#ededed]">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-[#ededed]">{Math.min(currentPage * itemsPerPage, filteredDevices.length)}</span> of <span className="text-[#ededed]">{filteredDevices.length}</span> devices
-          </div>
+            t("Showing", "Zobrazeno") + " <span className="text-[#ededed]">"{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-[#ededed]">{Math.min(currentPage * itemsPerPage, filteredDevices.length)}</span> of <span className="text-[#ededed]">{filteredDevices.length}</span> t("devices", "zařízení") + "\n          </div>"
           <div className="flex gap-2">
             <button 
               className="btn btn-secondary text-xs px-3 py-1.5"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             >
-              Previous
+              {t("Previous", "Předchozí")}
             </button>
             <button 
               className="btn btn-secondary text-xs px-3 py-1.5"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
             >
-              Next
+              {t("Next", "Další")}
             </button>
           </div>
         </div>
@@ -605,7 +610,9 @@ function DevicesTab() {
   );
 }
 
-function ApiKeysTab() {
+function ApiKeysTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
@@ -645,16 +652,16 @@ function ApiKeysTab() {
     });
     const result = await res.json();
     if (res.ok) {
-      alert(`API Key Created!\n\nKey: ${result.api_key}\n\nPlease save this key now as it won't be shown again.`);
+      alert(`API Key Created!\n\nKey: ${result.api_key}\n\nt("Please save this key now as it won't be shown again.", "Uložte si prosím tento klíč nyní, protože se již znovu nezobrazí.")`);
       setNewKeyName('');
       fetchKeys();
     } else {
-      alert(result.error || "Failed to create API key");
+      alert(result.error || t("Failed to create API key", "Nepodařilo se vytvořit API klíč"));
     }
   };
 
   const handleRemove = async (keyId) => {
-    if (!confirm("Remove this API key?")) return;
+    if (!confirm(t("Remove this API key?", "Odebrat tento API klíč?"))) return;
     await fetch('/api/dashboard/api-keys/remove', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account_id: selectedAcc, key_id: keyId })
@@ -672,8 +679,8 @@ function ApiKeysTab() {
         </select>
         
         <form onSubmit={handleAdd} className="flex gap-4 mb-6">
-          <input type="text" className="input max-w-sm" placeholder="New API Key Name" value={newKeyName} onChange={e => setNewKeyName(e.target.value)} required />
-          <button type="submit" className="btn btn-primary">Create Key</button>
+          <input type="text" className="input max-w-sm" placeholder={t("New API Key Name", "Nový název API klíče")} value={newKeyName} onChange={e => setNewKeyName(e.target.value)} required />
+          <button type="submit" className="btn btn-primary">{t("Create Key", "Vytvořit klíč")}</button>
         </form>
 
         <h3 className="text-lg font-semibold mb-4 text-[#ededed]">API Keys</h3>
@@ -682,9 +689,9 @@ function ApiKeysTab() {
             <table className="w-full text-left border-collapse text-sm">
               <thead className="bg-[#111]">
                 <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-                  <th className="py-3 px-4 font-semibold">Name</th>
-                  <th className="py-3 px-4 font-semibold">Created</th>
-                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                  <th className="py-3 px-4 font-semibold">{t("Name", "Název")}</th>
+                  <th className="py-3 px-4 font-semibold">{t("Created", "Vytvořeno")}</th>
+                  <th className="py-3 px-4 font-semibold text-right">{t("Actions", "Akce")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#222]">
@@ -693,11 +700,11 @@ function ApiKeysTab() {
                     <td className="py-3 px-4 font-medium text-[#ededed]">{k.name}</td>
                     <td className="py-3 px-4 text-[#888]">{new Date(k.create_time).toLocaleString()}</td>
                     <td className="py-3 px-4 text-right">
-                      <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(k.id)}>Remove</button>
+                      <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(k.id)}>{t("Remove", "Odebrat")}</button>
                     </td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="3" className="py-6 text-center text-[#888]">No API keys found.</td></tr>}
+                {data.length === 0 && <tr><td colSpan="3" className="py-6 text-center text-[#888]">{t("No API keys found.", "Nebyly nalezeny žádné API klíče.")}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -707,7 +714,9 @@ function ApiKeysTab() {
   );
 }
 
-function WalletsTab() {
+function WalletsTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [data, setData] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [payoutWalletId, setPayoutWalletId] = useState(null);
@@ -766,7 +775,7 @@ function WalletsTab() {
   };
 
   const handleRemove = async (walletId) => {
-    if (!confirm("Remove this wallet?")) return;
+    if (!confirm(t("Remove this wallet?", "Odebrat tuto peněženku?"))) return;
     await fetch('/api/dashboard/wallets/remove', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account_id: selectedAcc, wallet_id: walletId })
@@ -793,36 +802,36 @@ function WalletsTab() {
               <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
             ))}
           </select>
-          <button onClick={handleInitCircle} className="btn btn-secondary text-xs">Init Circle Self-Custody</button>
+          <button onClick={handleInitCircle} className="btn btn-secondary text-xs">{t("Init Circle Self-Custody", "Zahájit Circle peněženku")}</button>
         </div>
 
         <form onSubmit={handleAddWallet} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-[#111] rounded-lg border border-[#333]">
           <div>
-            <label className="label">Blockchain</label>
+            <label className="label">{t("Blockchain", "Blockchain")}</label>
             <select className="input" value={newBlockchain} onChange={e => setNewBlockchain(e.target.value)}>
               <option value="SOL">Solana (SOL)</option>
               <option value="MATIC">Polygon (MATIC)</option>
             </select>
           </div>
           <div className="md:col-span-2">
-            <label className="label">Wallet Address</label>
+            <label className="label">{t("Wallet Address", "Adresa peněženky")}</label>
             <div className="flex gap-2">
-              <input type="text" className="input" placeholder="Enter address" value={newAddr} onChange={e => setNewAddr(e.target.value)} required />
-              <button type="submit" className="btn btn-primary whitespace-nowrap">Add Wallet</button>
+              <input type="text" className="input" placeholder={t("Enter address", "Zadejte adresu")} value={newAddr} onChange={e => setNewAddr(e.target.value)} required />
+              <button type="submit" className="btn btn-primary whitespace-nowrap">{t("Add Wallet", "Přidat peněženku")}</button>
             </div>
           </div>
         </form>
         
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">Connected Wallets</h3>
+        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Connected Wallets", "Připojené peněženky")}</h3>
         {loading ? <div className="text-[#888]">Loading...</div> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead className="bg-[#111]">
                 <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-                  <th className="py-3 px-4 font-semibold">Address</th>
-                  <th className="py-3 px-4 font-semibold">Blockchain</th>
-                  <th className="py-3 px-4 font-semibold">Type</th>
-                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                  <th className="py-3 px-4 font-semibold">{t("Address", "Adresa")}</th>
+                  <th className="py-3 px-4 font-semibold">{t("Blockchain", "Blockchain")}</th>
+                  <th className="py-3 px-4 font-semibold">{t("Type", "Typ")}</th>
+                  <th className="py-3 px-4 font-semibold text-right">{t("Actions", "Akce")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#222]">
@@ -831,20 +840,20 @@ function WalletsTab() {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-[#ededed] truncate max-w-[200px]">{w.wallet_address || w.circle_wallet_id}</span>
-                        {payoutWalletId === w.wallet_id && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold uppercase">Primary Payout</span>}
+                        {payoutWalletId === w.wallet_id && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold uppercase">{t("Primary Payout", "Hlavní výplata")}</span>}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-[#888]">{w.blockchain}</td>
                     <td className="py-3 px-4 text-[#888]">{w.wallet_type}</td>
                     <td className="py-3 px-4 text-right space-x-2">
                       {payoutWalletId !== w.wallet_id && (
-                        <button className="text-xs text-blue-400 hover:text-blue-300 font-medium" onClick={() => handleSetPayout(w.wallet_id)}>Set Primary</button>
+                        <button className="text-xs text-blue-400 hover:text-blue-300 font-medium" onClick={() => handleSetPayout(w.wallet_id)}>{t("Set Primary", "Nastavit jako hlavní")}</button>
                       )}
-                      <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(w.wallet_id)}>Remove</button>
+                      <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(w.wallet_id)}>{t("Remove", "Odebrat")}</button>
                     </td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="4" className="py-6 text-center text-[#888]">No wallets connected.</td></tr>}
+                {data.length === 0 && <tr><td colSpan="4" className="py-6 text-center text-[#888]">{t("No wallets connected.", "Žádné připojené peněženky.")}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -852,16 +861,16 @@ function WalletsTab() {
       </div>
 
       <div className="card">
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">Payout History</h3>
+        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Payout History", "Historie výplat")}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead className="bg-[#111]">
               <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-                <th className="py-3 px-4 font-semibold">Date</th>
-                <th className="py-3 px-4 font-semibold">Amount</th>
-                <th className="py-3 px-4 font-semibold">Data (GB)</th>
-                <th className="py-3 px-4 font-semibold">Status</th>
-                <th className="py-3 px-4 font-semibold text-right">Transaction</th>
+                <th className="py-3 px-4 font-semibold">{t("Date", "Datum")}</th>
+                <th className="py-3 px-4 font-semibold">{t("Amount", "Částka")}</th>
+                <th className="py-3 px-4 font-semibold">{t("Data (GB)", "Data (GB)")}</th>
+                <th className="py-3 px-4 font-semibold">{t("Status", "Stav")}</th>
+                <th className="py-3 px-4 font-semibold text-right">{t("Transaction", "Transakce")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#222]">
@@ -873,7 +882,7 @@ function WalletsTab() {
                   </td>
                   <td className="py-3 px-4 text-[#888]">{(p.payout_byte_count / 1e9).toFixed(2)} GB</td>
                   <td className="py-3 px-4">
-                    {p.completed ? <span className="text-emerald-500">Completed</span> : p.canceled ? <span className="text-red-500">Canceled</span> : <span className="text-yellow-500">Pending</span>}
+                    {p.completed ? <span className="text-emerald-500">{t("Completed", "Dokončeno")}</span> : p.canceled ? <span className="text-red-500">{t("Canceled", "Zrušeno")}</span> : <span className="text-yellow-500">{t("Pending", "Čekající")}</span>}
                   </td>
                   <td className="py-3 px-4 text-right">
                     {p.tx_hash ? (
@@ -884,7 +893,7 @@ function WalletsTab() {
                   </td>
                 </tr>
               ))}
-              {payouts.length === 0 && <tr><td colSpan="5" className="py-6 text-center text-[#888]">No payouts found.</td></tr>}
+              {payouts.length === 0 && <tr><td colSpan="5" className="py-6 text-center text-[#888]">{t("No payouts found.", "Nebyly nalezeny žádné platby.")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -893,7 +902,9 @@ function WalletsTab() {
   );
 }
 
-function PreferencesTab() {
+function PreferencesTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
   const [prefs, setPrefs] = useState({ product_updates: false });
@@ -934,8 +945,8 @@ function PreferencesTab() {
       </select>
       <div className="flex items-center justify-between p-4 border border-[#333] rounded-lg bg-[#111]">
         <div>
-          <div className="font-medium">Product Updates</div>
-          <div className="text-sm text-[#888]">Receive emails about new features and updates.</div>
+          <div className="font-medium">{t("Product Updates", "Aktualizace produktu")}</div>
+          <div className="text-sm text-[#888]">{t("Receive emails about new features and updates.", "Dostávejte e-maily o nových funkcích a aktualizacích.")}</div>
         </div>
         <button 
           onClick={handleToggle}
@@ -948,7 +959,9 @@ function PreferencesTab() {
   );
 }
 
-function FeedbackTab() {
+function FeedbackTab({ lang = 'cs' }) {
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
   const [stars, setStars] = useState(5);
@@ -972,29 +985,29 @@ function FeedbackTab() {
       body: JSON.stringify({ account_id: selectedAcc, star_count: stars, text })
     });
     setSending(false);
-    if(res.ok) { alert("Feedback sent! Thank you."); setText(''); }
-    else alert("Failed to send feedback.");
+    if(res.ok) { alert(t("Feedback sent! Thank you.", "Zpětná vazba odeslána! Děkujeme.")); setText(''); }
+    else alert(t("Failed to send feedback.", "Nepodařilo se odeslat zpětnou vazbu."));
   };
 
   return (
     <div className="card max-w-xl">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <label className="label">Account</label>
+        <label className="label">{t("Account", "Účet")}</label>
         <select className="input mb-4" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
           {accounts.map(acc => (
             <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
           ))}
         </select>
         
-        <label className="label">Rating</label>
+        <label className="label">{t("Rating", "Hodnocení")}</label>
         <div className="flex gap-2 mb-4">
           {[1,2,3,4,5].map(s => (
             <button key={s} type="button" onClick={() => setStars(s)} className={`text-2xl ${stars >= s ? 'text-yellow-500' : 'text-[#333]'}`}>★</button>
           ))}
         </div>
 
-        <label className="label">Message</label>
-        <textarea className="input min-h-[120px]" value={text} onChange={e => setText(e.target.value)} placeholder="What can we improve?"></textarea>
+        <label className="label">{t("Message", "Zpráva")}</label>
+        <textarea className="input min-h-[120px]" value={text} onChange={e => setText(e.target.value)} placeholder={t("What can we improve?", "Co můžeme zlepšit?")}></textarea>
         
         <button type="submit" disabled={sending} className="btn btn-primary w-full">
           {sending ? "Sending..." : "Submit Feedback"}
@@ -1004,31 +1017,33 @@ function FeedbackTab() {
   );
 }
 
-export default function OwnerDashboard() {
+export default function OwnerDashboard({ lang = "cs" }) {
+  const isCs = lang === "cs";
+  const t = (en, cs) => isCs ? cs : en;
   const [activeTab, setActiveTab] = useState('overview');
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold tracking-tight">Owner Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t("Owner Dashboard", "Přehled správce")}</h1>
         <div className="flex bg-[#111] p-1 rounded-lg border border-[#333] overflow-x-auto">
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'overview' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('overview')}>Overview</button>
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'account' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('account')}>Network & Referrals</button>
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'devices' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('devices')}>Devices</button>
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'apikeys' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('apikeys')}>API Keys</button>
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'wallets' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('wallets')}>Wallets</button>
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'prefs' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('prefs')}>Preferences</button>
-          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'feedback' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('feedback')}>Feedback</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'overview' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('overview')}>{t("Overview", "Přehled")}</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'account' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('account')}>{t("Network & Referrals", "Síť a doporučení")}</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'devices' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('devices')}>{t("Devices", "Zařízení")}</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'apikeys' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('apikeys')}>{t("API Keys", "API klíče")}</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'wallets' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('wallets')}>{t("Wallets", "Peněženky")}</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'prefs' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('prefs')}>{t("Preferences", "Předvolby")}</button>
+          <button className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all whitespace-nowrap ${activeTab === 'feedback' ? 'bg-[#222] text-white shadow-sm' : 'text-[#888] hover:text-[#ededed]'}`} onClick={() => setActiveTab('feedback')}>{t("Feedback", "Zpětná vazba")}</button>
         </div>
       </div>
 
-      {activeTab === 'overview' && <OverviewTab />}
-      {activeTab === 'account' && <AccountInfoTab />}
-      {activeTab === 'devices' && <DevicesTab />}
-      {activeTab === 'apikeys' && <ApiKeysTab />}
-      {activeTab === 'wallets' && <WalletsTab />}
-      {activeTab === 'prefs' && <PreferencesTab />}
-      {activeTab === 'feedback' && <FeedbackTab />}
+      {activeTab === 'overview' && <OverviewTab lang={lang} />}
+      {activeTab === 'account' && <AccountInfoTab lang={lang} />}
+      {activeTab === 'devices' && <DevicesTab lang={lang} />}
+      {activeTab === 'apikeys' && <ApiKeysTab lang={lang} />}
+      {activeTab === 'wallets' && <WalletsTab lang={lang} />}
+      {activeTab === 'prefs' && <PreferencesTab lang={lang} />}
+      {activeTab === 'feedback' && <FeedbackTab lang={lang} />}
     </div>
   );
 }

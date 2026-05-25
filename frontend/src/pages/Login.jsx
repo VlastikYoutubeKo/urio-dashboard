@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, lang = 'cs' }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
+
+  const isCs = lang === 'cs';
+  const t = (en, cs) => isCs ? cs : en;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,33 +23,33 @@ export default function Login({ onLogin }) {
         onLogin();
         navigate('/dashboard');
       } else {
-        setError(data.error || 'Login failed');
+        setError(data.error || t('Login failed', 'Přihlášení se nezdařilo'));
       }
     } catch (err) {
-      setError('Network error');
+      setError(t('Network error', 'Chyba sítě'));
     }
   };
 
   return (
     <div className="max-w-md mx-auto mt-20 card">
-      <h1 className="text-2xl font-bold mb-2">Login</h1>
-      <p className="text-[var(--color-text-muted)] mb-6">Sign in to your dashboard</p>
+      <h1 className="text-2xl font-bold mb-2">{t("Login", "Přihlášení")}</h1>
+      <p className="text-[var(--color-text-muted)] mb-6">{t("Sign in to your dashboard", "Přihlaste se do svého přehledu")}</p>
       
       {error && <div className="bg-red-500/10 border-l-4 border-red-500 p-4 mb-6 text-red-400">{error}</div>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="label">Admin Password</label>
+          <label className="label">{t("Admin Password", "Heslo administrátora")}</label>
           <input 
             type="password" 
             className="input" 
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            placeholder="Password"
+            placeholder={t("Password", "Heslo")}
           />
         </div>
-        <button type="submit" className="btn btn-primary w-full mt-4">Sign In</button>
+        <button type="submit" className="btn btn-primary w-full mt-4">{t("Sign In", "Přihlásit se")}</button>
       </form>
     </div>
   );
