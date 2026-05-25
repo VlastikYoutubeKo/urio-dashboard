@@ -500,7 +500,7 @@ from backend.ur_api import (
     unlink_referral_network, fetch_blocked_locations, block_location, 
     unblock_location, set_device_name, fetch_associations, redeem_balance_code, 
     fetch_provider_stats, fetch_preferences, set_preferences, send_feedback, 
-    fetch_90_day_stats, fetch_hello, fetch_wallet_balance, validate_wallet_address,
+    fetch_hello, fetch_wallet_balance, validate_wallet_address,
     init_circle_wallet, transfer_out_circle, fetch_payout_wallet, set_payout_wallet,
     add_account_wallet, fetch_payment_stats
 )
@@ -629,9 +629,7 @@ def dashboard_send_feedback():
     if success: return jsonify({"message": res})
     return jsonify({"error": res}), 400
 
-@api_bp.route('/stats/last-90', methods=['GET'])
-def get_90_day_stats():
-    return jsonify(fetch_90_day_stats())
+
 
 @api_bp.route('/hello', methods=['GET'])
 def get_hello():

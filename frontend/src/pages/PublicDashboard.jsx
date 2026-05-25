@@ -10,7 +10,7 @@ export default function PublicDashboard({ lang = 'cs' }) {
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState(null);
   const [geoData, setGeoData] = useState(null);
-  const [stats90, setStats90] = useState(null);
+  const [networkGrowth, setNetworkGrowth] = useState(null);
 
   const isCs = lang === 'cs';
   const t = (en, cs) => isCs ? cs : en;
@@ -20,13 +20,13 @@ export default function PublicDashboard({ lang = 'cs' }) {
       fetch('/api/public/dashboard').then(res => res.json()),
       fetch('/api/locations').then(res => res.json()).catch(() => null),
       fetch('/countries.geojson').then(res => res.json()).catch(() => null),
-      fetch('/api/stats/last-90').then(res => res.json()).catch(() => null)
+      fetch('/api/provider/network_total').then(res => res.json()).catch(() => null)
     ])
-    .then(([dashboardData, locData, geoJson, s90]) => {
+    .then(([dashboardData, locData, geoJson, netGrowth]) => {
       setData(dashboardData);
       setLocations(locData);
       setGeoData(geoJson);
-      setStats90(s90);
+      setNetworkGrowth(netGrowth);
       setLoading(false);
     })
     .catch(err => {
@@ -43,10 +43,11 @@ export default function PublicDashboard({ lang = 'cs' }) {
     Total: data.chart_data.data[idx]
   }));
 
-  const longTermData = stats90?.all_transfer_data ? Object.entries(stats90.all_transfer_data).map(([day, val]) => ({
-    date: day,
-    Usage: val / 1e9
-  })).sort((a,b) => a.date.localeCompare(b.date)) : [];
+  const longTermData = networkGrowth ? networkGrowth.map(d => ({
+    date: new Date(d.timestamp).toLocaleDateString(),
+    Providers: d.total,
+    MA: d.ma
+  })) : [];
 
   // Prepare map data
   let mapDataWithDensity = geoData;
@@ -171,7 +172,7 @@ export default function PublicDashboard({ lang = 'cs' }) {
       )}
 
       <div className="card">
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Network Growth (90 Days - GB)", "Růst sítě (90 dní - GB)")}</h3>
+        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Network Growth (Providers)", "Růst sítě (Poskytovatelé)")}</h3>
         <div className="h-[400px]">
           {longTermData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -180,7 +181,8 @@ export default function PublicDashboard({ lang = 'cs' }) {
                 <XAxis dataKey="date" stroke="#888" tick={{fill: '#888', fontSize: 10}} tickLine={false} axisLine={false} />
                 <YAxis stroke="#888" tick={{fill: '#888', fontSize: 12}} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{backgroundColor: '#0a0a0a', borderColor: '#333', color: '#ededed', borderRadius: '8px'}} itemStyle={{color: '#ededed'}} />
-                <Line type="monotone" dataKey="Usage" stroke="#7928ca" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Providers" name={t("Providers", "Poskytovatelé")} stroke="#4ade80" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="MA" name={t("24h Moving Average", "24h Klouzavý průměr")} stroke="#9ca3af" strokeDasharray="5 5" strokeWidth={1} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           ) : (

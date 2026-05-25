@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] - 2026-05-25
+
+### Fixed
+- **Hallucinated Public Stats:** Completely removed the fabricated `/stats/last-90` API endpoint and its associated non-existent global UI stats cards.
+- **Provider Analytics Alignment:** Ported genuine SQLite querying logic directly from the original `provider-tracking` reference repository, guaranteeing the UI perfectly reflects the actual stored hourly tracker numbers.
+
 ## [1.1.0] - 2026-05-25
 
 ### Added

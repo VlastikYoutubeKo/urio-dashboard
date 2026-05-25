@@ -58,8 +58,7 @@ export default function ProvidersDashboard({ lang = 'cs' }) {
         fetch('/api/provider/anomalies?threshold=15').then(r => r.json()),
         fetch('/api/provider/growth-projection').then(r => r.json()),
         fetch('/api/provider/regions').then(r => r.json()),
-        fetch('/api/provider/at-risk').then(r => r.json()),
-        fetch('/api/stats/last-90').then(r => r.json()).catch(() => null)
+        fetch('/api/provider/at-risk').then(r => r.json())
       ]);
 
       setSummary(summaryRes);
@@ -69,7 +68,6 @@ export default function ProvidersDashboard({ lang = 'cs' }) {
       setGrowth(growthRes);
       setRegions(regionsRes);
       setAtRisk(atRiskRes);
-      setGlobalStats(globalStatsRes);
 
       // Populate country names cache from movers
       const cache = {};
@@ -354,62 +352,6 @@ export default function ProvidersDashboard({ lang = 'cs' }) {
               </div>
             </div>
 
-            {/* Global API stats cards (Last 90 days stats) */}
-            {globalStats && (
-              <div className="space-y-4">
-                <div className="text-sm font-semibold text-[#888] uppercase tracking-wider px-1">
-                  {t("⚡ Global Network Statistics (Public API)", "⚡ Globální statistiky sítě (Veřejné API)")}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-                  
-                  <div className="card hover:border-[#3a3a3a] bg-[#070709] p-5">
-                    <div className="text-xs text-[#888] mb-1 flex items-center justify-between">
-                      {t("Global Active Nodes", "Aktivní uzly sítě")}
-                      <Server className="w-4 h-4 text-blue-400" />
-                    </div>
-                    <div className="text-2xl font-bold text-white">{(globalStats.providers_summary || 0).toLocaleString()}</div>
-                    <p className="text-[10px] text-gray-500 mt-1">{t("Active global provider nodes", "Počet aktivních uzlů globálně")}</p>
-                  </div>
-
-                  <div className="card hover:border-[#3a3a3a] bg-[#070709] p-5">
-                    <div className="text-xs text-[#888] mb-1 flex items-center justify-between">
-                      {t("Supported Countries", "Pokryté státy")}
-                      <MapPin className="w-4 h-4 text-purple-400" />
-                    </div>
-                    <div className="text-2xl font-bold text-white">{(globalStats.countries_summary || 0).toLocaleString()}</div>
-                    <p className="text-[10px] text-gray-500 mt-1">{t("Countries with active nodes", "Země s aktivním připojením")}</p>
-                  </div>
-
-                  <div className="card hover:border-[#3a3a3a] bg-[#070709] p-5">
-                    <div className="text-xs text-[#888] mb-1 flex items-center justify-between">
-                      {t("Active Cities", "Aktivní města")}
-                      <Globe className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="text-2xl font-bold text-white">{(globalStats.cities_summary || 0).toLocaleString()}</div>
-                    <p className="text-[10px] text-gray-500 mt-1">{t("Distinct regional cities", "Města s aktivními providery")}</p>
-                  </div>
-
-                  <div className="card hover:border-[#3a3a3a] bg-[#070709] p-5">
-                    <div className="text-xs text-[#888] mb-1 flex items-center justify-between">
-                      {t("Connected Devices", "Připojená zařízení")}
-                      <Cpu className="w-4 h-4 text-orange-400" />
-                    </div>
-                    <div className="text-2xl font-bold text-white">{(globalStats.devices_summary || 0).toLocaleString()}</div>
-                    <p className="text-[10px] text-gray-500 mt-1">{t("Active network devices", "Počet sdílejících zařízení")}</p>
-                  </div>
-
-                  <div className="card hover:border-[#3a3a3a] bg-[#070709] p-5">
-                    <div className="text-xs text-[#888] mb-1 flex items-center justify-between">
-                      {t("Bandwidth Transferred", "Přenesený provoz")}
-                      <Database className="w-4 h-4 text-teal-400" />
-                    </div>
-                    <div className="text-2xl font-bold text-white">{formatBytes(globalStats.all_transfer_summary)}</div>
-                    <p className="text-[10px] text-gray-500 mt-1">{t("Decentralized data delivered", "Celkový objem přenesených dat")}</p>
-                  </div>
-
-                </div>
-              </div>
-            )}
 
             {/* Historical Total Area Chart */}
             <div className="card">

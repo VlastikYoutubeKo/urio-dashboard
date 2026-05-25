@@ -351,6 +351,3 @@ def fetch_hello():
     resp = request_with_retry("get", f"{UR_API_BASE}/hello")
     return resp.json() if resp and resp.status_code == 200 else {}
 
-def fetch_90_day_stats():
-    resp = request_with_retry("get", f"{UR_API_BASE}/stats/last-90")
-    return resp.json() if resp and resp.status_code == 200 else {}
