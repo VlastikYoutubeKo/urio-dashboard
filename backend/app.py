@@ -4,7 +4,6 @@ from flask import Flask, send_from_directory
 from flask_cors import CORS
 from backend.models import db, Setting
 from backend.routes import api_bp, load_env
-from backend.stats_routes import provider_bp
 from backend.scheduler import init_scheduler
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -33,8 +32,7 @@ def create_app():
 
     db.init_app(app)
     
-    app.register_blueprint(api_bp)
-    app.register_blueprint(provider_bp)
+    app.register_blueprint(api_bp, url_prefix='/api')
 
     with app.app_context():
         db.create_all()

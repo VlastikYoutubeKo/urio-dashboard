@@ -872,11 +872,11 @@ def provider_summary():
     current_total = db.session.execute(text("SELECT SUM(provider_count) as total FROM provider_counts WHERE timestamp = :t"), {'t': latest}).scalar() or 0
     
     hour_ago = (datetime.datetime.fromisoformat(latest) - datetime.timedelta(hours=1)).isoformat(sep=' ')
-    hour_ago_total = db.session.execute(text("SELECT SUM(provider_count) FROM provider_counts WHERE timestamp <= :t ORDER BY timestamp DESC LIMIT 1"), {'t': hour_ago}).scalar() or current_total
+    hour_ago_total = db.session.execute(text("SELECT SUM(provider_count) FROM provider_counts WHERE timestamp = (SELECT MAX(timestamp) FROM provider_counts WHERE timestamp <= :t)"), {'t': hour_ago}).scalar() or current_total
     hour_delta = current_total - hour_ago_total
     
     day_ago = (datetime.datetime.fromisoformat(latest) - datetime.timedelta(days=1)).isoformat(sep=' ')
-    day_ago_total = db.session.execute(text("SELECT SUM(provider_count) FROM provider_counts WHERE timestamp <= :t ORDER BY timestamp DESC LIMIT 1"), {'t': day_ago}).scalar() or current_total
+    day_ago_total = db.session.execute(text("SELECT SUM(provider_count) FROM provider_counts WHERE timestamp = (SELECT MAX(timestamp) FROM provider_counts WHERE timestamp <= :t)"), {'t': day_ago}).scalar() or current_total
     day_delta = current_total - day_ago_total
     
     top_10_res = db.session.execute(text("SELECT country_name, country_code, provider_count FROM provider_counts WHERE timestamp = :t ORDER BY provider_count DESC LIMIT 10"), {'t': latest})
@@ -1169,10 +1169,10 @@ def provider_movers_detailed():
         
         past_res = db.session.execute(text("""
             SELECT country_code, provider_count
-            FROM provider_counts
+            FROM provider_counts pc
             WHERE timestamp = (
                 SELECT MAX(timestamp) FROM provider_counts
-                WHERE timestamp <= :w_str AND country_code = provider_counts.country_code
+                WHERE timestamp <= :w_str AND country_code = pc.country_code
             )
         """), {'w_str': w_str})
         
@@ -1184,12 +1184,15 @@ def provider_movers_detailed():
             
     sorted_countries = sorted(
         [data for data in country_data.values() if 'current' in data],
-        key=lambda x: x['deltas'].get('24h', 0),
+        key=lambda x: (x['deltas'].get('24h', 0), x.get('current', 0)),
         reverse=True
     )
     
     gainers = sorted_countries[:50]
-    losers = sorted(sorted_countries, key=lambda x: x['deltas'].get('24h', 0))[:50]
+    losers = sorted(
+        [data for data in country_data.values() if 'current' in data],
+        key=lambda x: (x['deltas'].get('24h', 0), -x.get('current', 0))
+    )[:50]
     
     return jsonify({'gainers': gainers, 'losers': losers})
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.2] - 2026-05-26
+
+### Fixed
+- **API Routing Conflict:** Removed a duplicated blueprint configuration that was overriding the newly implemented Provider tracking analytics with outdated code from the original `routes.py` implementation.
+- **Historical Data Calculation:** Fixed a critical SQL correlation bug in `provider_movers_detailed` and `provider_summary` endpoints where the use of `SUM(provider_count)` was summing all historical records instead of the single historical record matching the target timeframe window. This resolves the impossibly large negative 1h and 24h delta values.
+- **Movers Table Sorting:** Added a secondary sorting key based on the absolute number of providers. When changes (deltas) are equal across regions, the Movers table now properly ranks the countries with the largest overall provider network size first.
+
 ## [1.1.1] - 2026-05-25
 
 ### Fixed
