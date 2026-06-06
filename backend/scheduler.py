@@ -10,15 +10,18 @@ from backend.ur_api import get_jwt_from_credentials, fetch_transfer_stats, fetch
 scheduler = APScheduler()
 
 def format_bytes(bytes_count):
-    """Formats bytes into GB/TB for display using decimal units (matching UrNetwork API)."""
-    gb = bytes_count / 1e9
-    if gb >= 1000:
-        return f"{gb/1000:.2f} TB"
-    return f"{gb:.3f} GB"
+    """Formats bytes into KB/MB/GB/TB for display using decimal units (matching UrNetwork API)."""
+    if bytes_count < 1e6:
+        return f"{bytes_count / 1e3:.2f} KB"
+    elif bytes_count < 1e9:
+        return f"{bytes_count / 1e6:.2f} MB"
+    elif bytes_count >= 1e12:
+        return f"{bytes_count / 1e12:.2f} TB"
+    return f"{bytes_count / 1e9:.3f} GB"
 
 def get_traffic_delta(account_id, minutes):
     """Calculates the traffic shared by an account in the last X minutes."""
-    cutoff = datetime.datetime.now() - datetime.timedelta(minutes=minutes)
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=minutes)
     # Find the stats record closest to the cutoff but not newer than now
     old_stat = Stats.query.filter(
         Stats.account_id == account_id,
@@ -54,7 +57,7 @@ def send_webhook_notification(app, account, current_stats, prev_stats=None):
         if not webhooks:
             return
 
-        now = datetime.datetime.now()
+        now = datetime.datetime.utcnow()
         paid_diff = current_stats.paid_bytes - (prev_stats.paid_bytes if prev_stats else current_stats.paid_bytes)
         unpaid_diff = current_stats.unpaid_bytes - (prev_stats.unpaid_bytes if prev_stats else current_stats.unpaid_bytes)
         total_diff = paid_diff + unpaid_diff
@@ -68,8 +71,8 @@ def send_webhook_notification(app, account, current_stats, prev_stats=None):
                 trigger_event = "💰 Payment Received"
                 color = 3066993  # Green
             
-            # 2. Check for Wallet Change (any increase)
-            elif webhook.on_change and total_diff > 0:
+            # 2. Check for Wallet Change (any increase >= 1 MB to prevent spam)
+            elif webhook.on_change and total_diff >= 1e6:
                 trigger_event = "🔄 Wallet Balance Updated"
                 color = 3447003  # Blue
             
@@ -87,7 +90,7 @@ def send_webhook_notification(app, account, current_stats, prev_stats=None):
                 s12h_p, s12h_u = get_traffic_delta(account.id, 12 * 60)
                 s1d_p, s1d_u = get_traffic_delta(account.id, 24 * 60)
 
-                payload = {
+                default_payload = {
                     "embeds": [{
                         "title": f"{trigger_event} - {account.nickname or account.username}",
                         "color": color,
@@ -103,9 +106,24 @@ def send_webhook_notification(app, account, current_stats, prev_stats=None):
                             ), "inline": False}
                         ],
                         "footer": {"text": "UrNetwork Stats Dashboard"},
-                        "timestamp": now.isoformat()
+                        "timestamp": now.isoformat() + "Z"
                     }]
                 }
+                
+                payload = default_payload
+                if webhook.payload and webhook.payload.strip():
+                    try:
+                        tmpl = Template(webhook.payload)
+                        rendered = tmpl.safe_substitute({
+                            "account": account.nickname or account.username,
+                            "paid_gb": f"{(current_stats.paid_bytes / 1e9):.3f}",
+                            "unpaid_gb": f"{(current_stats.unpaid_bytes / 1e9):.3f}",
+                            "total_gb": f"{((current_stats.paid_bytes + current_stats.unpaid_bytes) / 1e9):.3f}",
+                            "update_time": now.strftime("%Y-%m-%d %H:%M:%S UTC")
+                        })
+                        payload = json.loads(rendered)
+                    except Exception as e:
+                        logging.error(f"Failed to parse custom JSON payload: {e}")
 
                 requests.post(webhook.url, json=payload, timeout=10)
                 logging.info(f"Sent {trigger_event} notification to {webhook.url}")
@@ -152,7 +170,7 @@ def init_scheduler(app):
             webhooks = Webhook.query.filter_by(on_summary=True).all()
             if not webhooks: return
             
-            now = datetime.datetime.now()
+            now = datetime.datetime.utcnow()
             accounts = Account.query.filter_by(is_active=True).all()
             
             for webhook in webhooks:
@@ -194,10 +212,19 @@ def init_scheduler(app):
                     s12h_p, s12h_u = get_traffic_delta(account.id, 12 * 60)
                     s1d_p, s1d_u = get_traffic_delta(account.id, 24 * 60)
                     
+                    interval_totals = {
+                        "30m": s30m_p + s30m_u,
+                        "1h": s1h_p + s1h_u,
+                        "12h": s12h_p + s12h_u,
+                        "1d": s1d_p + s1d_u
+                    }
+                    if interval_totals.get(webhook.summary_interval, 0) == 0:
+                        continue
+                        
                     latest = Stats.query.filter_by(account_id=account.id).order_by(Stats.timestamp.desc()).first()
                     if not latest: continue
 
-                    payload = {
+                    default_payload = {
                         "embeds": [{
                             "title": f"📊 Traffic Summary - {account.nickname or account.username}",
                             "color": 9124843, # Purple
@@ -211,9 +238,24 @@ def init_scheduler(app):
                                 ), "inline": False}
                             ],
                             "footer": {"text": f"Interval: {webhook.summary_interval}"},
-                            "timestamp": now.isoformat()
+                            "timestamp": now.isoformat() + "Z"
                         }]
                     }
+                    
+                    payload = default_payload
+                    if webhook.payload and webhook.payload.strip():
+                        try:
+                            tmpl = Template(webhook.payload)
+                            rendered = tmpl.safe_substitute({
+                                "account": account.nickname or account.username,
+                                "paid_gb": f"{(latest.paid_bytes / 1e9):.3f}",
+                                "unpaid_gb": f"{(latest.unpaid_bytes / 1e9):.3f}",
+                                "total_gb": f"{((latest.paid_bytes + latest.unpaid_bytes) / 1e9):.3f}",
+                                "update_time": now.strftime("%Y-%m-%d %H:%M:%S UTC")
+                            })
+                            payload = json.loads(rendered)
+                        except Exception as e:
+                            logging.error(f"Failed to parse custom JSON payload: {e}")
                     try:
                         requests.post(webhook.url, json=payload, timeout=10)
                     except: pass
