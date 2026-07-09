@@ -15,6 +15,25 @@ from sqlalchemy import text
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
+import time
+_api_cache = {}
+
+def cached_api(ttl_seconds=900):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            key = f.__name__ + str(args) + str(kwargs)
+            now = time.time()
+            if key in _api_cache:
+                val, expiry = _api_cache[key]
+                if now < expiry:
+                    return val
+            val = f(*args, **kwargs)
+            _api_cache[key] = (val, now + ttl_seconds)
+            return val
+        return decorated_function
+    return decorator
+
 ENV_FILE = ".env"
 
 def is_installed():
@@ -65,43 +84,35 @@ def calculate_earnings(payments, unpaid_bytes=0):
     one_month_ago = now - datetime.timedelta(days=30)
     sixty_days_ago = now - datetime.timedelta(days=60)
     
-    recent_nano_cents = 0
+    recent_usd = 0
     recent_bytes = 0
 
     if not payments:
         return 0, 0, 0
 
     for payment in payments:
-        if "payout_nano_cents" in payment:
-            amount_usd = (payment.get("payout_nano_cents", 0) + payment.get("subsidy_payout_nano_cents", 0) + payment.get("reliability_subsidy_nano_cents", 0)) / 1e11
-            total_earnings += amount_usd
-            payment_time_str = payment.get("create_time")
-            if payment_time_str:
-                try:
-                    payment_time = isoparse(payment_time_str)
-                    if payment_time > one_month_ago:
-                        monthly_earnings += amount_usd
-                    if payment_time > sixty_days_ago:
-                        recent_nano_cents += (payment.get("payout_nano_cents", 0) + payment.get("subsidy_payout_nano_cents", 0) + payment.get("reliability_subsidy_nano_cents", 0))
-                        recent_bytes += payment.get("payout_byte_count", 0)
-                except (ValueError, TypeError):
-                    pass
-        elif payment.get("completed"):
-            amount = payment.get("token_amount", 0)
-            total_earnings += amount
-            payment_time_str = payment.get("payment_time")
-            if payment_time_str:
-                try:
-                    payment_time = isoparse(payment_time_str)
-                    if payment_time > one_month_ago:
-                        monthly_earnings += amount
-                except (ValueError, TypeError):
-                    pass
+        amount_usd = payment.get("token_amount")
+        if amount_usd is None:
+            amount_usd = payment.get("payout_nano_cents", 0) / 1e9
+
+        total_earnings += amount_usd
+        
+        payment_time_str = payment.get("payment_time") or payment.get("create_time")
+        if payment_time_str:
+            try:
+                payment_time = isoparse(payment_time_str)
+                if payment_time > one_month_ago:
+                    monthly_earnings += amount_usd
+                if payment_time > sixty_days_ago:
+                    recent_usd += amount_usd
+                    recent_bytes += payment.get("payout_byte_count", 0)
+            except (ValueError, TypeError):
+                pass
 
     approx_pending = 0
     if recent_bytes > 0:
-        rate = recent_nano_cents / recent_bytes
-        approx_pending = (unpaid_bytes * rate) / 1e9
+        rate = recent_usd / recent_bytes
+        approx_pending = unpaid_bytes * rate
 
     return total_earnings, monthly_earnings, approx_pending
 
@@ -864,6 +875,7 @@ REGIONS_DICT = {
 }
 
 @api_bp.route('/provider/summary', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_summary():
     latest = db.session.execute(text("SELECT MAX(timestamp) as latest FROM provider_counts")).scalar()
     if not latest:
@@ -891,6 +903,7 @@ def provider_summary():
     })
 
 @api_bp.route('/provider/network_total', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_network_total():
     res = db.session.execute(text("""
         SELECT timestamp, SUM(provider_count) as total
@@ -909,6 +922,7 @@ def provider_network_total():
     return jsonify(data)
 
 @api_bp.route('/provider/movers', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_movers():
     latest = db.session.execute(text("SELECT MAX(timestamp) FROM provider_counts")).scalar()
     if not latest:
@@ -965,6 +979,7 @@ def provider_movers():
     return jsonify(movers)
 
 @api_bp.route('/provider/anomalies', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_anomalies():
     threshold_pct = float(request.args.get('threshold', 15))
     threshold = threshold_pct / 100
@@ -1002,6 +1017,7 @@ def provider_anomalies():
     return jsonify({'anomalies': anomalies, 'threshold': threshold})
 
 @api_bp.route('/provider/growth-projection', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_growth_projection():
     latest = db.session.execute(text("SELECT MAX(timestamp) FROM provider_counts")).scalar()
     if not latest:
@@ -1138,6 +1154,7 @@ def provider_at_risk():
     })
 
 @api_bp.route('/provider/movers-detailed', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_movers_detailed():
     latest = db.session.execute(text("SELECT MAX(timestamp) FROM provider_counts")).scalar()
     if not latest:
@@ -1197,6 +1214,7 @@ def provider_movers_detailed():
     return jsonify({'gainers': gainers, 'losers': losers})
 
 @api_bp.route('/provider/country/<code>', methods=['GET'])
+@cached_api(ttl_seconds=900)
 def provider_country(code):
     res = db.session.execute(text("""
         SELECT timestamp, provider_count
