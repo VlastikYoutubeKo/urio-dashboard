@@ -585,7 +585,8 @@ function DevicesTab({ lang = 'cs' }) {
       {totalPages > 1 && (
         <div className="p-4 border-t border-[#333] flex items-center justify-between">
           <div className="text-sm text-[#888]">
-            t("Showing", "Zobrazeno") + " <span className="text-[#ededed]">"{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-[#ededed]">{Math.min(currentPage * itemsPerPage, filteredDevices.length)}</span> of <span className="text-[#ededed]">{filteredDevices.length}</span> t("devices", "zařízení") + "\n          </div>"
+            {t("Showing", "Zobrazeno")} <span className="text-[#ededed]">{(currentPage - 1) * itemsPerPage + 1}</span> {t("to", "až")} <span className="text-[#ededed]">{Math.min(currentPage * itemsPerPage, filteredDevices.length)}</span> {t("of", "z")} <span className="text-[#ededed]">{filteredDevices.length}</span> {t("devices", "zařízení")}
+          </div>
           <div className="flex gap-2">
             <button 
               className="btn btn-secondary text-xs px-3 py-1.5"
