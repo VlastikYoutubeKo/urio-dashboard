@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.3] - 2026-07-09
+
+### Added
+- **Automated Device Cleanup:** Configured a `cleanup_offline_devices_job` background task that tracks native BringYour API connection timestamps (`auth_time`) and automatically removes offline devices inactive for more than 7 days, keeping the dashboard clean.
+
+### Changed
+- **Payout Amount Calculation:** Switched payout history from using generic estimations to parsing the exact `token_amount` directly from UrNetwork API receipts to reflect the true monetary amount paid out.
+- **Dashboard Earnings Estimate:** Renamed "Total Earnings & Pending" to "Total Earnings & Estimate" and added explicit explanations that pending sums are extrapolated from current unswiped bytes and recent averages, eliminating user confusion.
+- **Device Management:** Fixed JSX translation string interpolation in device pagination text ("Showing X to Y of Z devices") that previously rendered as raw, broken React template strings.
+
 ## [1.1.2] - 2026-05-26
 
 ### Fixed
