@@ -216,13 +216,11 @@ function AccountInfoTab({ lang = 'cs' }) {
       {selectedAcc !== 'all' && data.account_details && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           <div className="card bg-gradient-to-br from-[#111] to-[#0a0a0a]">
-            <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Total Earnings & Pending", "Celkové a čekající výdělky")}</div>
+            <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Total Earnings & Estimate", "Celkové výdělky a odhad")}</div>
             <div className="text-3xl font-bold text-[#0070f3]">
               ${data.total_earnings?.toFixed(2) || '0.00'}
             </div>
-            <div className="text-xs text-[#888] mt-2 flex justify-between items-center">
-              <span>+ ${data.account_details.approximate_payments?.toFixed(5) || '0.00'} {t("pending", "čeká")}</span>
-            </div>
+            <div className="text-sm font-medium text-emerald-500 mt-2 bg-emerald-500/10 inline-block px-3 py-1 rounded-full">+ ${data.account_details.approximate_payments?.toFixed(5) || '0.00'} {t("estimated from unpaid data", "odhad za nevyplacená data")}</div>
           </div>
           <div className="card">
             <div className="text-xs font-semibold text-[#888] uppercase mb-2">{t("Network Score", "Skóre sítě")}</div>
