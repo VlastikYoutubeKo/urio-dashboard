@@ -321,21 +321,12 @@ def init_scheduler(app):
 
     @scheduler.task(id="cleanup_offline_devices_job", trigger="interval", hours=6)
     def cleanup_offline_devices_job():
-        """Removes devices that have been offline for more than 7 days."""
-        import os
+        """Removes devices that have been offline for more than 7 days using auth_time."""
         import time
+        from dateutil.parser import isoparse
         
-        filepath = os.path.join(app.instance_path, 'devices_last_seen.json')
-        last_seen = {}
-        if os.path.exists(filepath):
-            try:
-                with open(filepath, 'r') as f:
-                    last_seen = json.load(f)
-            except Exception:
-                pass
-                
-        now = time.time()
-        week_seconds = 7 * 24 * 3600
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cutoff = now - datetime.timedelta(days=7)
         
         with app.app_context():
             accounts = Account.query.filter_by(is_active=True).all()
@@ -350,23 +341,22 @@ def init_scheduler(app):
                         
                         is_online = 'connections' in d and len(d['connections']) > 0
                         if is_online:
-                            last_seen[client_id] = now
-                        else:
-                            if client_id not in last_seen:
-                                last_seen[client_id] = now
-                            else:
-                                if now - last_seen[client_id] > week_seconds:
-                                    logging.info(f"Removing device {client_id} (offline > 7 days)")
-                                    remove_device(jwt, client_id)
-                                    last_seen.pop(client_id, None)
+                            continue
+                            
+                        auth_time_str = d.get('auth_time')
+                        if not auth_time_str:
+                            continue
+                            
+                        try:
+                            auth_time = isoparse(auth_time_str)
+                            if auth_time < cutoff:
+                                logging.info(f"Removing device {client_id} (offline since {auth_time_str})")
+                                remove_device(jwt, client_id)
+                                time.sleep(0.1) # anti rate limit
+                        except Exception:
+                            pass
                 except Exception as e:
                     logging.error(f"Error in cleanup_offline_devices_job for {account.username}: {e}")
-                    
-        try:
-            with open(filepath, 'w') as f:
-                json.dump(last_seen, f)
-        except Exception as e:
-            logging.error(f"Failed to save devices_last_seen: {e}")
 
     # Run initial sync for provider counts if the table is empty
     with app.app_context():
