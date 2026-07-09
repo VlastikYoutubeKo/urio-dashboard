@@ -5,7 +5,7 @@ import requests
 from string import Template
 from flask_apscheduler import APScheduler
 from backend.models import db, Account, Stats, Webhook, ProviderCount
-from backend.ur_api import get_jwt_from_credentials, fetch_transfer_stats, fetch_provider_locations
+from backend.ur_api import get_jwt_from_credentials, fetch_transfer_stats, fetch_provider_locations, fetch_devices, remove_device
 
 scheduler = APScheduler()
 
@@ -318,6 +318,55 @@ def init_scheduler(app):
             except Exception as e:
                 logging.error(f"Error in poll_providers_job: {e}")
                 db.session.rollback()
+
+    @scheduler.task(id="cleanup_offline_devices_job", trigger="interval", hours=6)
+    def cleanup_offline_devices_job():
+        """Removes devices that have been offline for more than 7 days."""
+        import os
+        import time
+        
+        filepath = os.path.join(app.instance_path, 'devices_last_seen.json')
+        last_seen = {}
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r') as f:
+                    last_seen = json.load(f)
+            except Exception:
+                pass
+                
+        now = time.time()
+        week_seconds = 7 * 24 * 3600
+        
+        with app.app_context():
+            accounts = Account.query.filter_by(is_active=True).all()
+            for account in accounts:
+                try:
+                    jwt = get_jwt_from_credentials(account.username, account.password)
+                    if not jwt: continue
+                    devices = fetch_devices(jwt)
+                    for d in devices:
+                        client_id = d.get('client_id')
+                        if not client_id: continue
+                        
+                        is_online = 'connections' in d and len(d['connections']) > 0
+                        if is_online:
+                            last_seen[client_id] = now
+                        else:
+                            if client_id not in last_seen:
+                                last_seen[client_id] = now
+                            else:
+                                if now - last_seen[client_id] > week_seconds:
+                                    logging.info(f"Removing device {client_id} (offline > 7 days)")
+                                    remove_device(jwt, client_id)
+                                    last_seen.pop(client_id, None)
+                except Exception as e:
+                    logging.error(f"Error in cleanup_offline_devices_job for {account.username}: {e}")
+                    
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(last_seen, f)
+        except Exception as e:
+            logging.error(f"Failed to save devices_last_seen: {e}")
 
     # Run initial sync for provider counts if the table is empty
     with app.app_context():
