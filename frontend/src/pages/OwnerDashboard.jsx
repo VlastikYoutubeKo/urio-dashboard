@@ -876,9 +876,9 @@ function WalletsTab({ lang = 'cs' }) {
             <tbody className="divide-y divide-[#222]">
               {payouts.map(p => (
                 <tr key={p.payment_id} className="hover:bg-[#111] transition-colors">
-                  <td className="py-3 px-4 text-[#888]">{new Date(p.create_time).toLocaleDateString()}</td>
+                  <td className="py-3 px-4 text-[#888]">{new Date(p.create_time).toLocaleString()}</td>
                   <td className="py-3 px-4 font-bold text-[#0070f3]">
-                    ${((p.payout_nano_cents + p.subsidy_payout_nano_cents + (p.reliability_subsidy_nano_cents || 0)) / 1e9).toFixed(2)}
+                    ${(p.token_amount || (p.payout_nano_cents / 1e9)).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-[#888]">{(p.payout_byte_count / 1e9).toFixed(2)} GB</td>
                   <td className="py-3 px-4">
