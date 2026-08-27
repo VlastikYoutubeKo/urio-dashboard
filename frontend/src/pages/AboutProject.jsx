@@ -31,8 +31,8 @@ export default function AboutProject({ lang = 'cs' }) {
     {
       q: t("How does the provider program work?", "Jak funguje program pro poskytovatele?"),
       a: t(
-        "Anyone can become a provider by running the Ur provider app on Windows, macOS, Linux, or Android (also available as a browser extension for Chrome and Firefox). The app shares your spare bandwidth with the network in a sandboxed, safe way. You earn USDC (stablecoin on Solana or Polygon blockchain) for every gigabyte routed through your device. Critically, running the app does NOT automatically make your device an exit node — you have to explicitly opt in to providing bandwidth.",
-        "Kdokoli se může stát poskytovatelem spuštěním aplikace Ur provider na Windows, macOS, Linuxu nebo Androidu (dostupná také jako rozšíření prohlížeče pro Chrome a Firefox). Aplikace sdílí vaši volnou šířku pásma se sítí bezpečným, sandboxovaným způsobem. Za každý gigabajt přenesený přes vaše zařízení vyděláváte USDC (stablecoin na blockchainu Solana nebo Polygon). Klíčové je, že spuštění aplikace VÁS AUTOMATICKY NEUDĚLÁ výstupním uzlem — musíte explicitně souhlasit se sdílením šířky pásma."
+        "Anyone can become a provider by running the Ur provider app on Windows, macOS, Linux, or Android (also available as a browser extension for Chrome and Firefox). The app shares your spare bandwidth with the network in a sandboxed, safe way. You earn USDC on the Solana blockchain for every gigabyte routed through your device. Critically, running the app does NOT automatically make your device an exit node — you have to explicitly opt in to providing bandwidth.",
+        "Kdokoli se může stát poskytovatelem spuštěním aplikace Ur provider na Windows, macOS, Linuxu nebo Androidu (dostupná také jako rozšíření prohlížeče pro Chrome a Firefox). Aplikace sdílí vaši volnou šířku pásma se sítí bezpečným, sandboxovaným způsobem. Za každý gigabajt přenesený přes vaše zařízení vyděláváte USDC na blockchainu Solana. Klíčové je, že spuštění aplikace VÁS AUTOMATICKY NEUDĚLÁ výstupním uzlem — musíte explicitně souhlasit se sdílením šířky pásma."
       )
     },
     {
@@ -165,8 +165,8 @@ export default function AboutProject({ lang = 'cs' }) {
           </h3>
           <p className="text-sm text-[#888] leading-relaxed">
             {t(
-              "Run the Ur provider app on any device and earn USDC passively for the spare bandwidth you share. Payouts happen automatically on a weekly basis, sent directly to your Solana or Polygon wallet. You control when and how much you share.",
-              "Spusťte aplikaci Ur provider na jakémkoli zařízení a pasivně vydělávejte USDC za volnou šířku pásma, kterou sdílíte. Výplaty probíhají automaticky na týdenní bázi, posílány přímo do vaší peněženky Solana nebo Polygon. Vy kontrolujete kdy a kolik sdílíte."
+              "Run the Ur provider app on any device and earn USDC passively for the spare bandwidth you share. Payouts happen automatically on a weekly basis, sent directly to your Solana wallet. Additionally, the independent UR protocol is being built as a Bittensor subnet (SN25), which will introduce TAO emissions as a future payout option.",
+              "Spusťte aplikaci Ur provider na jakémkoli zařízení a pasivně vydělávejte USDC za volnou šířku pásma, kterou sdílíte. Výplaty probíhají automaticky na týdenní bázi, posílány přímo do vaší peněženky Solana. Nezávislý UR protokol se navíc buduje jako Bittensor subnet (SN25), který do budoucna přinese TAO emise jako další možnost výplaty."
             )}
           </p>
           <ul className="space-y-2 text-xs text-gray-300">
@@ -176,7 +176,7 @@ export default function AboutProject({ lang = 'cs' }) {
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-              {t("Paid out in USDC on Solana or Polygon", "Vypláceno v USDC na Solana nebo Polygon")}
+              {t("Currently paid in USDC on Solana · Bittensor SN25 (TAO) in testing", "Aktuálně vypláceno v USDC na Solana · Bittensor SN25 (TAO) v testování")}
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
