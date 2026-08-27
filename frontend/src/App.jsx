@@ -131,7 +131,7 @@ function App() {
               {lang === 'cs' ? 'Nástroje správce' : 'Owner Tools'}
             </div>
             <NavLink to="/dashboard" icon={LayoutDashboard}>
-              {lang === 'cs' ? 'Přehled' : 'Overview'}
+              {lang === 'cs' ? 'Můj dashboard' : 'My Dashboard'}
             </NavLink>
             <NavLink to="/accounts" icon={Users}>
               {lang === 'cs' ? 'Účty' : 'Accounts'}
@@ -218,13 +218,19 @@ function App() {
 function DiscoveryFooter() {
   const [info, setInfo] = useState(null);
   useEffect(() => {
-    fetch('/api/hello').then(res => res.json()).then(setInfo).catch(() => {});
+    // Fetch directly from client side to get browser's actual IP, with fallback to proxy route
+    fetch('https://api.bringyour.com/hello')
+      .then(res => res.json())
+      .then(setInfo)
+      .catch(() => {
+        fetch('/api/hello').then(res => res.json()).then(setInfo).catch(() => {});
+      });
   }, []);
 
   if(!info || !info.client_address) return null;
   return (
-    <div className="text-[10px] text-[#444] font-mono uppercase tracking-tighter">
-      Node: {info.client_address}
+    <div className="text-[10px] text-[#555] font-mono uppercase tracking-tighter">
+      IP: {info.client_address}
     </div>
   );
 }
