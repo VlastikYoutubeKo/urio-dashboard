@@ -169,6 +169,33 @@ function AccountInfoTab({ lang = 'cs' }) {
     if(res.ok) window.location.reload();
   };
 
+  const [authCode, setAuthCode] = useState(null);
+  const [authCodeLoading, setAuthCodeLoading] = useState(false);
+  const [authCodeDuration, setAuthCodeDuration] = useState(5);
+  const [authCodeCopied, setAuthCodeCopied] = useState(false);
+
+  const handleGenerateAuthCode = async () => {
+    if (!selectedAcc || selectedAcc === 'all') return;
+    setAuthCodeLoading(true);
+    setAuthCode(null);
+    setAuthCodeCopied(false);
+    const res = await fetch('/api/dashboard/generate-auth-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: selectedAcc, uses: 1, duration_minutes: authCodeDuration })
+    });
+    const d = await res.json();
+    setAuthCodeLoading(false);
+    if (d.auth_code) setAuthCode(d.auth_code);
+    else alert(d.error || t('Failed to generate auth code', 'Nepodařilo se vygenerovat auth kód'));
+  };
+
+  const handleCopyAuthCode = () => {
+    if (!authCode) return;
+    navigator.clipboard.writeText(authCode);
+    setAuthCodeCopied(true);
+    setTimeout(() => setAuthCodeCopied(false), 2000);
+  };
+
   const [associations, setAssociations] = useState(null);
   const [blockedLocs, setBlockedLocs] = useState([]);
   useEffect(() => {
@@ -253,6 +280,53 @@ function AccountInfoTab({ lang = 'cs' }) {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {selectedAcc !== 'all' && (
+        <div className="card">
+          <h3 className="text-lg font-semibold mb-1 text-[#ededed]">{t("Auth Code Generator", "Generátor Auth Kódu")}</h3>
+          <p className="text-xs text-[#888] mb-4">{t("Generate a one-time auth code to log in on another device or authorize a provider node without entering your password.", "Vygeneruje jednorázový kód pro přihlášení na jiném zařízení nebo autorizaci provider uzlu bez zadání hesla.")}</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs text-[#888] mb-1 block">{t("Validity (minutes)", "Platnost (minuty)")}</label>
+              <select
+                className="input text-sm"
+                value={authCodeDuration}
+                onChange={e => { setAuthCodeDuration(Number(e.target.value)); setAuthCode(null); }}
+              >
+                <option value={1}>1 {t("minute", "minuta")}</option>
+                <option value={5}>5 {t("minutes", "minut")}</option>
+                <option value={15}>15 {t("minutes", "minut")}</option>
+                <option value={60}>60 {t("minutes", "minut")}</option>
+              </select>
+            </div>
+            <button
+              onClick={handleGenerateAuthCode}
+              disabled={authCodeLoading}
+              className="btn btn-primary text-sm flex items-center gap-2"
+            >
+              {authCodeLoading ? (
+                <><div className="w-4 h-4 border-2 border-t-white border-white/30 rounded-full animate-spin"></div>{t("Generating...", "Generuji...")}</>
+              ) : t("Generate Auth Code", "Vygenerovat Auth Kód")}
+            </button>
+          </div>
+
+          {authCode && (
+            <div className="mt-4 p-4 bg-[#0a0a0a] border border-[#333] rounded-lg">
+              <div className="text-xs text-[#888] mb-2">{t("Your auth code (valid for", "Váš auth kód (platí")} {authCodeDuration} {t("minutes, single-use):", "minut, jednorázový):")}</div>
+              <div className="flex items-center gap-3">
+                <code className="flex-1 text-emerald-400 font-mono text-base bg-[#111] px-4 py-3 rounded-lg break-all select-all">{authCode}</code>
+                <button
+                  onClick={handleCopyAuthCode}
+                  className={`btn text-sm whitespace-nowrap ${authCodeCopied ? 'bg-emerald-600 text-white' : 'btn-secondary'}`}
+                >
+                  {authCodeCopied ? t("✓ Copied!", "✓ Zkopírováno!") : t("Copy", "Kopírovat")}
+                </button>
+              </div>
+              <p className="text-xs text-[#555] mt-2">{t("Use this code at", "Použij tento kód na")} <span className="text-[#888]">https://ur.io</span> {t("or run:", "nebo spusť:")} <code className="text-[#888] bg-[#111] px-1 rounded">./provider auth</code></p>
+            </div>
+          )}
         </div>
       )}
 

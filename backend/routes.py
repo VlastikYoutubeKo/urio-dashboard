@@ -513,8 +513,24 @@ from backend.ur_api import (
     fetch_provider_stats, fetch_preferences, set_preferences, send_feedback, 
     fetch_hello, fetch_wallet_balance, validate_wallet_address,
     init_circle_wallet, transfer_out_circle, fetch_payout_wallet, set_payout_wallet,
-    add_account_wallet, fetch_payment_stats
+    add_account_wallet, fetch_payment_stats, generate_auth_code
 )
+
+@api_bp.route('/dashboard/generate-auth-code', methods=['POST'])
+@login_required
+def dashboard_generate_auth_code():
+    data = request.json or {}
+    account_id = data.get('account_id')
+    uses = int(data.get('uses', 1))
+    duration_minutes = float(data.get('duration_minutes', 5.0))
+    account = Account.query.get(account_id)
+    jwt = get_valid_jwt(account)
+    if not jwt:
+        return jsonify({"error": "Failed to authenticate"}), 401
+    code, err = generate_auth_code(jwt, uses=uses, duration_minutes=duration_minutes)
+    if code:
+        return jsonify({"auth_code": code})
+    return jsonify({"error": err or "Failed to generate code"}), 400
 
 @api_bp.route('/account/payments', methods=['GET'])
 @login_required

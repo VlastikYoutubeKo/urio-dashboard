@@ -59,6 +59,20 @@ def get_jwt_from_credentials(user, password):
         logging.error(f"Could not get JWT from credentials: {e}")
         return None
 
+def generate_auth_code(jwt_token, uses=1, duration_minutes=5.0):
+    """Generates a one-time auth code for the given account."""
+    if not jwt_token: return None, "Not authenticated"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    resp = request_with_retry("post", f"{UR_API_BASE}/auth/code-create", headers=headers, json={
+        "uses": uses,
+        "duration_minutes": duration_minutes
+    })
+    if not resp: return None, "Request failed"
+    data = resp.json()
+    if "auth_code" in data:
+        return data["auth_code"], None
+    return None, data.get("error", "Unknown error")
+
 @cached(cache=stats_cache)
 def fetch_transfer_stats(jwt_token):
     if not jwt_token: return None
