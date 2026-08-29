@@ -20,6 +20,10 @@
   }
 }
 
+.map-tile-inverted .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(1.2);
+}
+
 @layer components {
   .btn {
     @apply px-4 py-2 rounded-md font-medium transition-all duration-200 text-sm flex items-center justify-center gap-2;

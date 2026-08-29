@@ -1,97 +1,100 @@
-# URnetwork Stats Dashboard (Redesigned)
+# URnetwork Stats Dashboard
 
-A modern, SaaS-grade dashboard for tracking and managing bandwidth usage on the URnetwork (BringYour.io). This version features a sleek React-based single-page application (SPA) with a powerful Flask backend, real-time data streaming, and comprehensive management tools.
+A self-hosted React + Flask dashboard for monitoring and managing URnetwork
+(BringYour) accounts, devices, wallets, provider distribution, and optional
+Discord webhooks.
 
-## Key Features
+> **Privacy and security:** this application is intended for a single owner or
+> trusted administrator. It stores encrypted upstream account credentials and
+> usage history. Keep the host, database, and secret file private.
 
-- **Modern Dark UI:** A refined, Vercel-inspired interface with a responsive sidebar and interactive charts.
-- **Real-Time Device Streaming:** View thousands of devices instantly using Server-Sent Events (SSE) and concurrent fetching.
-- **Comprehensive Analytics:** Track paid vs. unpaid data, 90-day network growth, and individual device statistics.
-- **Account Management:** Manage multiple URnetwork accounts, API keys, payout wallets, and referral networks.
-- **Interactive Global Map:** Visualize provider distribution worldwide with an interactive country density map.
-- **Robust Caching:** Built-in backend caching (TTLCache) prevents API rate-limiting and ensures high performance.
-- **Management Tools:** Easily rename devices, update provide modes, and manage blocked locations directly from the dashboard.
-- **Bilingual Localization:** Full Czech and English language support with automatic browser locale detection and instant dynamic toggling.
-- **Rich Discord Embed Previews:** Optimized OpenGraph and Twitter Card metadata for premium, visual link previews when shared on Discord.
+## Features
 
-## Tech Stack
+- Account-level paid/unpaid transfer history and aggregated charts.
+- Device, API key, wallet, referral, and preference management.
+- Public provider analytics with historical growth, regional views, movers, and
+  at-risk country detection.
+- Public dashboard privacy controls: financial/account aggregates remain private
+  unless the owner explicitly enables aggregate publication.
+- Validated Discord-compatible webhooks with HTTPS host allowlisting.
+- CSRF-protected session authentication, password hashing, rate-limited login,
+  encrypted stored upstream credentials, and security response headers.
+- Czech and English UI.
 
-- **Frontend:** React 18, Vite, Tailwind CSS, Recharts, React-Leaflet, Lucide React.
-- **Backend:** Flask, Flask-SQLAlchemy, Flask-APScheduler, Cachetools, Requests.
-- **Database:** SQLite (persisted in `instance/transfer_stats.db`).
+## Quick start (local development)
 
----
+Requirements: Python **3.11+** and Node.js **22+**.
 
-## Getting Started
-
-### 1. Prerequisites
-- Python 3.8+
-- Node.js (for building the frontend)
-- `pip` and `npm`
-
-### 2. Installation
-
-1.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/VlastikYoutubeKo/urio-dashboard.git
-    cd urio-dashboard
-    ```
-
-2.  **Setup Backend:**
-    Install Python dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Setup Frontend:**
-    Install Node dependencies and build the production assets:
-    ```bash
-    cd frontend
-    npm install
-    npm run build
-    cd ..
-    ```
-
-### 3. Running the Application
-
-Start the Flask server:
 ```bash
-python main.py
+git clone https://github.com/VlastikYoutubeKo/urio-dashboard.git
+cd urio-dashboard
+
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+
+(cd frontend && npm ci && npm run build)
+RUN_SCHEDULER=false python main.py
 ```
-By default, the application will be available at **`http://127.0.0.1:90`**.
 
----
+Open `http://127.0.0.1:90`, complete the installation wizard, then add
+URnetwork accounts from the private Accounts page. The wizard creates a private
+`.env` file containing a random Flask secret, an administrator password hash,
+and the credential-encryption key. It is written with mode `0600` and is
+ignored by Git.
 
-## Initial Setup (Installation Wizard)
+For frontend live development, run Vite separately; its proxy keeps browser API
+calls relative rather than targeting localhost directly:
 
-When you first visit the dashboard, you will be redirected to the `/install` page.
-1. Set an **Admin Password**. This password will be required for all private dashboard actions.
-2. Once installed, a `.env` file will be created in your root directory.
-3. Log in using your admin password.
-4. Go to the **Accounts** page to add your URnetwork credentials.
+```bash
+RUN_SCHEDULER=false python main.py
+(cd frontend && npm run dev -- --host 0.0.0.0)
+```
 
----
+## Quality checks
 
-## Project Structure
+```bash
+python -m pytest -q
+(cd frontend && npm run lint && npm run build)
+```
 
-- `main.py`: The entry point for the application.
-- `backend/`: The Python Flask API backend.
-- `frontend/`: The React source code.
-- `frontend/dist/`: The built frontend assets (served by Flask).
-- `instance/`: Directory for the SQLite database and backups.
+Run these backend and frontend checks before opening a pull request.
 
-## Deployment Notes
+## Production
 
-- **Port Configuration:** The application defaults to port 90. You can change this in `main.py`.
-- **Environment Variables:** Credentials and the admin password hash are stored in the `.env` file. **Do not share this file.**
-- **Database Backups:** It is recommended to regularly back up the `instance/transfer_stats.db` file.
+Use Docker Compose or Gunicorn behind an HTTPS reverse proxy. The full secure
+deployment guide, backup procedure, scheduler topology, and configuration
+reference are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## Credits & Attributions
+```bash
+docker compose up -d --build
+```
 
-- **Developed Entirely with AI:** This redesigned version of the dashboard was conceptualized, architected, and coded entirely using AI.
-- **Original Basis:** Before the full SaaS redesign, this project was based on the original code by [techroy23/UrNetwork-Stats-Dashboard](https://github.com/techroy23/UrNetwork-Stats-Dashboard).
+The included Compose file binds the application only to `127.0.0.1:8000`; put
+Caddy, nginx, or another trusted TLS proxy in front of it. Do not expose Flask
+or Gunicorn directly to the internet.
 
----
+### Important operational constraints
+
+- Keep exactly **one** process with `RUN_SCHEDULER=true`. Additional web workers
+  must set it to `false`.
+- Back up both the database and the private environment file. The encryption key
+  in that file is required to decrypt existing account credentials.
+- Keep `SESSION_COOKIE_SECURE=true` and use HTTPS in production.
+- Leave `CORS_ALLOWED_ORIGINS` blank for the bundled same-origin frontend. If a
+  separate frontend is necessary, set only exact trusted HTTPS origins—never
+  `*`.
+- `AUTO_REMOVE_OFFLINE_DEVICES` is disabled by default because it removes
+  upstream devices; enable it only after understanding the impact.
+
+## Configuration
+
+Copy [`.env.example`](.env.example) as a documented template. Do not commit a
+real `.env` file or paste its values into support tickets. See the deployment
+guide for every setting and safe deployment examples.
 
 ## License
-This project is for personal use with the URnetwork API. See the [Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/) for library dependencies.
+
+This project is for personal use with the URnetwork API. See the
+[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/) for library
+dependencies.

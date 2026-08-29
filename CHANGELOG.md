@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Security
+- Replaced the setup default secret and plaintext administrator password with a
+  generated Flask secret, password hash, CSRF-protected sessions, and login
+  throttling.
+- Encrypt stored URnetwork credentials with a persistent Fernet key, redact
+  webhook URLs, restrict webhooks to approved HTTPS Discord-compatible hosts,
+  and disable credentialed wildcard CORS.
+- Added secure response headers, request-size limits, validation for mutable API
+  inputs, and explicit aggregate-only public dashboard controls.
+
+### Reliability
+- Added a Flask application factory, bounded upstream HTTP timeouts/retries,
+  safe cache invalidation, response-copying cache behavior, and scheduler
+  cleanup/duplicate-summary safeguards.
+- Corrected provider history calculations for zero-count prior snapshots,
+  disappeared countries, parameter-specific caching, and bounded public cache
+  storage.
+
+### Development
+- Added regression/security tests, dependency auditing, Docker Compose, a
+  production deployment guide, and frontend lint/build cleanup.
+
 ## [1.1.3] - 2026-07-09
 
 ### Added

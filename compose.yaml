@@ -1,0 +1,34 @@
+services:
+  dashboard:
+    build: .
+    restart: unless-stopped
+    ports:
+      # Keep the application private and terminate TLS in a reverse proxy.
+      - "127.0.0.1:8000:8000"
+    environment:
+      APP_ENV: production
+      PORT: "8000"
+      DATABASE_URL: sqlite:////data/transfer_stats.db
+      INSTANCE_DIR: /data/instance
+      URIO_ENV_FILE: /data/.env
+      RUN_SCHEDULER: "true"
+      SESSION_COOKIE_SECURE: "true"
+      ENABLE_HSTS: "true"
+      # Safe here because the service binds to loopback and a trusted local
+      # reverse proxy is the only public entry point.
+      TRUST_PROXY_HEADERS: "true"
+      # Set this only when serving a separately hosted frontend. Comma-separate
+      # exact HTTPS origins; leave empty for the same-origin bundled frontend.
+      CORS_ALLOWED_ORIGINS: ""
+    volumes:
+      - urio-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  urio-data:
