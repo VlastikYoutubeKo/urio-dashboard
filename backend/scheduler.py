@@ -1,387 +1,425 @@
-import datetime
+"""Background collection and notification jobs.
+
+Run these jobs in exactly one process by setting ``RUN_SCHEDULER=true`` there
+and ``false`` in additional web workers.  Jobs are deliberately separate from
+request handlers so an unavailable upstream API never blocks application boot.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
 import logging
-import json
-import requests
-from string import Template
+import time
+
 from flask_apscheduler import APScheduler
-from backend.models import db, Account, Stats, Webhook, ProviderCount
-from backend.ur_api import get_jwt_from_credentials, fetch_transfer_stats, fetch_provider_locations, fetch_devices, remove_device
+
+from backend.models import Account, ProviderCount, Stats, Webhook, db
+from backend.security import authenticate_account
+from backend.ur_api import fetch_devices, fetch_provider_locations, fetch_transfer_stats, remove_device
+from backend.webhooks import deliver_webhook, render_payload
 
 scheduler = APScheduler()
 
-def format_bytes(bytes_count):
-    """Formats bytes into KB/MB/GB/TB for display using decimal units (matching UrNetwork API)."""
-    if bytes_count < 1e6:
-        return f"{bytes_count / 1e3:.2f} KB"
-    elif bytes_count < 1e9:
-        return f"{bytes_count / 1e6:.2f} MB"
-    elif bytes_count >= 1e12:
-        return f"{bytes_count / 1e12:.2f} TB"
-    return f"{bytes_count / 1e9:.3f} GB"
 
-def get_traffic_delta(account_id, minutes):
-    """Calculates the traffic shared by an account in the last X minutes."""
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=minutes)
-    # Find the stats record closest to the cutoff but not newer than now
-    old_stat = Stats.query.filter(
-        Stats.account_id == account_id,
-        Stats.timestamp <= cutoff
-    ).order_by(Stats.timestamp.desc()).first()
-    
+def _utc_now() -> dt.datetime:
+    return dt.datetime.now(dt.UTC).replace(tzinfo=None, microsecond=0)
+
+
+def _snapshot_timestamp(value: dt.datetime | None = None) -> str:
+    return (value or _utc_now()).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_bytes(bytes_count: int | float) -> str:
+    """Format bytes with decimal units, matching the upstream API."""
+    value = max(0, float(bytes_count or 0))
+    if value < 1e6:
+        return f"{value / 1e3:.2f} KB"
+    if value < 1e9:
+        return f"{value / 1e6:.2f} MB"
+    if value >= 1e12:
+        return f"{value / 1e12:.2f} TB"
+    return f"{value / 1e9:.3f} GB"
+
+
+def get_traffic_delta(account_id: int, minutes: int) -> tuple[int, int]:
+    """Calculate transferred traffic against the closest snapshot before cutoff."""
+    cutoff = _utc_now() - dt.timedelta(minutes=minutes)
+    old_stat = (
+        Stats.query.filter(Stats.account_id == account_id, Stats.timestamp <= cutoff)
+        .order_by(Stats.timestamp.desc(), Stats.id.desc())
+        .first()
+    )
     if not old_stat:
-        # If no old stat found, we might be just starting, or the database was cleared.
-        # Fallback to the oldest available stat within a reasonable range
-        old_stat = Stats.query.filter(
-            Stats.account_id == account_id
-        ).order_by(Stats.timestamp.asc()).first()
-        
-    if not old_stat:
+        old_stat = Stats.query.filter_by(account_id=account_id).order_by(Stats.timestamp.asc()).first()
+    latest_stat = (
+        Stats.query.filter_by(account_id=account_id)
+        .order_by(Stats.timestamp.desc(), Stats.id.desc())
+        .first()
+    )
+    if not old_stat or not latest_stat or old_stat.id == latest_stat.id:
         return 0, 0
-        
-    # Get current (latest) stat
-    latest_stat = Stats.query.filter(
-        Stats.account_id == account_id
-    ).order_by(Stats.timestamp.desc()).first()
-    
-    if not latest_stat or latest_stat.id == old_stat.id:
-        return 0, 0
-        
-    paid_delta = max(0, latest_stat.paid_bytes - old_stat.paid_bytes)
-    unpaid_delta = max(0, latest_stat.unpaid_bytes - old_stat.unpaid_bytes)
-    return paid_delta, unpaid_delta
+    return (
+        max(0, latest_stat.paid_bytes - old_stat.paid_bytes),
+        max(0, latest_stat.unpaid_bytes - old_stat.unpaid_bytes),
+    )
 
-def send_webhook_notification(app, account, current_stats, prev_stats=None):
-    """Sends notifications to webhooks based on event triggers."""
-    with app.app_context():
-        webhooks = Webhook.query.all()
-        if not webhooks:
-            return
 
-        now = datetime.datetime.utcnow()
-        paid_diff = current_stats.paid_bytes - (prev_stats.paid_bytes if prev_stats else current_stats.paid_bytes)
-        unpaid_diff = current_stats.unpaid_bytes - (prev_stats.unpaid_bytes if prev_stats else current_stats.unpaid_bytes)
-        total_diff = paid_diff + unpaid_diff
+def _webhook_substitutions(account: Account, current_stats: Stats, now: dt.datetime) -> dict[str, str]:
+    return {
+        "account": account.nickname or account.username,
+        "paid_gb": f"{current_stats.paid_bytes / 1e9:.3f}",
+        "unpaid_gb": f"{current_stats.unpaid_bytes / 1e9:.3f}",
+        "total_gb": f"{(current_stats.paid_bytes + current_stats.unpaid_bytes) / 1e9:.3f}",
+        "update_time": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+    }
 
-        for webhook in webhooks:
-            trigger_event = None
-            color = 5814783  # Default blue
-            
-            # 1. Check for Payment (paid_bytes increased)
-            if webhook.on_payment and paid_diff > 0:
-                trigger_event = "💰 Payment Received"
-                color = 3066993  # Green
-            
-            # 2. Check for Wallet Change (any increase >= 1 MB to prevent spam)
-            elif webhook.on_change and total_diff >= 1e6:
-                trigger_event = "🔄 Wallet Balance Updated"
-                color = 3447003  # Blue
-            
-            # 3. Check for Periodic Summary (if 15 min have passed or similar)
-            # We'll handle summaries in a separate logic or if specifically requested.
-            # For now, if no event triggered, we skip this webhook if it's not a summary time.
-            
-            if not trigger_event:
-                continue
 
-            try:
-                # Calculate summaries for the webhook
-                s30m_p, s30m_u = get_traffic_delta(account.id, 30)
-                s1h_p, s1h_u = get_traffic_delta(account.id, 60)
-                s12h_p, s12h_u = get_traffic_delta(account.id, 12 * 60)
-                s1d_p, s1d_u = get_traffic_delta(account.id, 24 * 60)
+def send_webhook_notification(app, account: Account, current_stats: Stats, previous_stats: Stats | None = None) -> None:
+    """Send payment/balance-change notifications and persist delivery state."""
+    now = _utc_now()
+    paid_diff = current_stats.paid_bytes - (previous_stats.paid_bytes if previous_stats else current_stats.paid_bytes)
+    unpaid_diff = current_stats.unpaid_bytes - (previous_stats.unpaid_bytes if previous_stats else current_stats.unpaid_bytes)
+    total_diff = paid_diff + unpaid_diff
 
-                default_payload = {
-                    "embeds": [{
-                        "title": f"{trigger_event} - {account.nickname or account.username}",
-                        "color": color,
-                        "fields": [
-                            {"name": "Account", "value": account.nickname or account.username, "inline": False},
-                            {"name": "Current Total", "value": format_bytes(current_stats.paid_bytes + current_stats.unpaid_bytes), "inline": True},
-                            {"name": "Recent Change", "value": f"+{format_bytes(total_diff)}", "inline": True},
-                            {"name": "Traffic Shared (Summaries)", "value": (
-                                f"**Last 30m:** {format_bytes(s30m_p + s30m_u)}\n"
-                                f"**Last 1h:** {format_bytes(s1h_p + s1h_u)}\n"
-                                f"**Last 12h:** {format_bytes(s12h_p + s12h_u)}\n"
-                                f"**Last 24h:** {format_bytes(s1d_p + s1d_u)}"
-                            ), "inline": False}
-                        ],
-                        "footer": {"text": "UrNetwork Stats Dashboard"},
-                        "timestamp": now.isoformat() + "Z"
-                    }]
+    for webhook in Webhook.query.all():
+        event = None
+        color = 5814783
+        if webhook.on_payment and paid_diff > 0:
+            event, color = "💰 Payment Received", 3066993
+        elif webhook.on_change and total_diff >= 1e6:
+            event, color = "🔄 Wallet Balance Updated", 3447003
+        if not event:
+            continue
+
+        s30m = sum(get_traffic_delta(account.id, 30))
+        s1h = sum(get_traffic_delta(account.id, 60))
+        s12h = sum(get_traffic_delta(account.id, 12 * 60))
+        s1d = sum(get_traffic_delta(account.id, 24 * 60))
+        default_payload = {
+            "embeds": [
+                {
+                    "title": f"{event} - {account.nickname or account.username}",
+                    "color": color,
+                    "fields": [
+                        {"name": "Account", "value": account.nickname or account.username, "inline": False},
+                        {
+                            "name": "Current Total",
+                            "value": format_bytes(current_stats.paid_bytes + current_stats.unpaid_bytes),
+                            "inline": True,
+                        },
+                        {"name": "Recent Change", "value": f"+{format_bytes(total_diff)}", "inline": True},
+                        {
+                            "name": "Traffic Shared (Summaries)",
+                            "value": (
+                                f"**Last 30m:** {format_bytes(s30m)}\n"
+                                f"**Last 1h:** {format_bytes(s1h)}\n"
+                                f"**Last 12h:** {format_bytes(s12h)}\n"
+                                f"**Last 24h:** {format_bytes(s1d)}"
+                            ),
+                            "inline": False,
+                        },
+                    ],
+                    "footer": {"text": "URnetwork Stats Dashboard"},
+                    "timestamp": now.replace(tzinfo=dt.UTC).isoformat().replace("+00:00", "Z"),
                 }
-                
-                payload = default_payload
-                if webhook.payload and webhook.payload.strip():
-                    try:
-                        tmpl = Template(webhook.payload)
-                        rendered = tmpl.safe_substitute({
-                            "account": account.nickname or account.username,
-                            "paid_gb": f"{(current_stats.paid_bytes / 1e9):.3f}",
-                            "unpaid_gb": f"{(current_stats.unpaid_bytes / 1e9):.3f}",
-                            "total_gb": f"{((current_stats.paid_bytes + current_stats.unpaid_bytes) / 1e9):.3f}",
-                            "update_time": now.strftime("%Y-%m-%d %H:%M:%S UTC")
-                        })
-                        payload = json.loads(rendered)
-                    except Exception as e:
-                        logging.error(f"Failed to parse custom JSON payload: {e}")
+            ]
+        }
+        payload = render_payload(webhook, default_payload, _webhook_substitutions(account, current_stats, now))
+        deliver_webhook(webhook, payload, allowed_hosts=app.config["WEBHOOK_ALLOWED_HOSTS"])
+    db.session.commit()
 
-                requests.post(webhook.url, json=payload, timeout=10)
-                logging.info(f"Sent {trigger_event} notification to {webhook.url}")
-            except Exception as e:
-                logging.error(f"Failed to send webhook to {webhook.url}: {e}")
 
-def init_scheduler(app):
-    scheduler.init_app(app)
-
-    @scheduler.task(id="log_stats_job", trigger="cron", minute="0,15,30,45")
-    def log_stats_job():
-        """Scheduled job to fetch and store stats every 15 minutes."""
-        with app.app_context():
-            accounts = Account.query.filter_by(is_active=True).all()
-            for account in accounts:
-                try:
-                    jwt = get_jwt_from_credentials(account.username, account.password)
-                    if not jwt: continue
-                    
-                    data = fetch_transfer_stats(jwt)
-                    if not data: continue
-
-                    prev_stats = Stats.query.filter_by(account_id=account.id).order_by(Stats.timestamp.desc()).first()
-                    
-                    new_stats = Stats(
-                        account_id=account.id,
-                        paid_bytes=data["paid_bytes"],
-                        paid_gb=data["paid_gb"],
-                        unpaid_bytes=data["unpaid_bytes"],
-                        unpaid_gb=data["unpaid_gb"]
-                    )
-                    db.session.add(new_stats)
-                    db.session.commit()
-                    
-                    send_webhook_notification(app, account, new_stats, prev_stats)
-                    
-                except Exception as e:
-                    logging.error(f"Error in log_stats_job for {account.username}: {e}")
-
-    @scheduler.task(id="periodic_summary_job", trigger="cron", minute="0,15,30,45")
-    def periodic_summary_job():
-        """Sends periodic summaries to webhooks that have on_summary=True."""
-        with app.app_context():
-            webhooks = Webhook.query.filter_by(on_summary=True).all()
-            if not webhooks: return
-            
-            now = datetime.datetime.utcnow()
-            accounts = Account.query.filter_by(is_active=True).all()
-            
-            for webhook in webhooks:
-                # Direct clock-aligned trigger checks
-                should_trigger = False
-                current_minute = now.minute
-                current_hour = now.hour
-                
-                # Determine interval in minutes for fallback
-                interval_map = {"30m": 30, "1h": 60, "12h": 12 * 60, "1d": 24 * 60}
-                minutes = interval_map.get(webhook.summary_interval, 60)
-                
-                if webhook.summary_interval == "30m":
-                    if current_minute in (0, 30):
-                        should_trigger = True
-                elif webhook.summary_interval == "1h":
-                    if current_minute == 0:
-                        should_trigger = True
-                elif webhook.summary_interval == "12h":
-                    if current_hour in (0, 12) and current_minute == 0:
-                        should_trigger = True
-                elif webhook.summary_interval == "1d":
-                    if current_hour == 0 and current_minute == 0:
-                        should_trigger = True
-                else:
-                    # Fallback to time delta if custom or not matched
-                    last_sent = webhook.last_summary_at or (now - datetime.timedelta(days=1))
-                    if (now - last_sent).total_seconds() / 60 >= (minutes - 2):
-                        should_trigger = True
-                
-                if not should_trigger:
-                    continue
-
-                logging.info(f"Triggering periodic summary ({webhook.summary_interval}) for webhook ID {webhook.id}")
-
-                for account in accounts:
-                    s30m_p, s30m_u = get_traffic_delta(account.id, 30)
-                    s1h_p, s1h_u = get_traffic_delta(account.id, 60)
-                    s12h_p, s12h_u = get_traffic_delta(account.id, 12 * 60)
-                    s1d_p, s1d_u = get_traffic_delta(account.id, 24 * 60)
-                    
-                    interval_totals = {
-                        "30m": s30m_p + s30m_u,
-                        "1h": s1h_p + s1h_u,
-                        "12h": s12h_p + s12h_u,
-                        "1d": s1d_p + s1d_u
-                    }
-                    if interval_totals.get(webhook.summary_interval, 0) == 0:
-                        continue
-                        
-                    latest = Stats.query.filter_by(account_id=account.id).order_by(Stats.timestamp.desc()).first()
-                    if not latest: continue
-
-                    default_payload = {
-                        "embeds": [{
-                            "title": f"📊 Traffic Summary - {account.nickname or account.username}",
-                            "color": 9124843, # Purple
-                            "fields": [
-                                {"name": "Total Shared", "value": format_bytes(latest.paid_bytes + latest.unpaid_bytes), "inline": True},
-                                {"name": "Summary Windows", "value": (
-                                    f"**Last 30m:** {format_bytes(s30m_p + s30m_u)}\n"
-                                    f"**Last 1h:** {format_bytes(s1h_p + s1h_u)}\n"
-                                    f"**Last 12h:** {format_bytes(s12h_p + s12h_u)}\n"
-                                    f"**Last 24h:** {format_bytes(s1d_p + s1d_u)}"
-                                ), "inline": False}
-                            ],
-                            "footer": {"text": f"Interval: {webhook.summary_interval}"},
-                            "timestamp": now.isoformat() + "Z"
-                        }]
-                    }
-                    
-                    payload = default_payload
-                    if webhook.payload and webhook.payload.strip():
-                        try:
-                            tmpl = Template(webhook.payload)
-                            rendered = tmpl.safe_substitute({
-                                "account": account.nickname or account.username,
-                                "paid_gb": f"{(latest.paid_bytes / 1e9):.3f}",
-                                "unpaid_gb": f"{(latest.unpaid_bytes / 1e9):.3f}",
-                                "total_gb": f"{((latest.paid_bytes + latest.unpaid_bytes) / 1e9):.3f}",
-                                "update_time": now.strftime("%Y-%m-%d %H:%M:%S UTC")
-                            })
-                            payload = json.loads(rendered)
-                        except Exception as e:
-                            logging.error(f"Failed to parse custom JSON payload: {e}")
-                    try:
-                        requests.post(webhook.url, json=payload, timeout=10)
-                    except: pass
-                
-                webhook.last_summary_at = now
-                db.session.commit()
-
-    @scheduler.task(id="cleanup_old_stats_job", trigger="cron", hour="3", minute="0")
-    def cleanup_old_stats_job():
-        """Scheduled job to delete stats data older than 7 days, and provider data older than 90 days, runs daily at 3 AM."""
-        with app.app_context():
-            logging.info("Running daily stats cleanup job...")
-            try:
-                cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
-                num_rows_deleted = db.session.query(Stats).filter(Stats.timestamp < cutoff_date).delete(synchronize_session=False)
-                db.session.commit()
-
-                if num_rows_deleted > 0:
-                    logging.info(f"Successfully deleted {num_rows_deleted} stats records older than 7 days.")
-                else:
-                    logging.info("No old stats records found to delete.")
-
-                # Cleanup provider counts older than 90 days
-                cutoff_provider_str = (datetime.datetime.utcnow() - datetime.timedelta(days=90)).strftime("%Y-%m-%d %H:%M:%S")
-                num_providers_deleted = db.session.query(ProviderCount).filter(ProviderCount.timestamp < cutoff_provider_str).delete(synchronize_session=False)
-                db.session.commit()
-                if num_providers_deleted > 0:
-                    logging.info(f"Successfully deleted {num_providers_deleted} provider counts older than 90 days.")
-            except Exception as e:
-                logging.error(f"Scheduled job 'cleanup_old_stats_job' failed: {e}")
-                db.session.rollback()
-
-    @scheduler.task(id="poll_providers_job", trigger="cron", minute="2")
-    def poll_providers_job():
-        """Scheduled job to fetch provider counts by country hourly."""
-        with app.app_context():
-            logging.info("Running provider counts polling job...")
-            try:
-                jwt = None
-                account = Account.query.filter_by(is_active=True).first()
-                if account:
-                    jwt = get_jwt_from_credentials(account.username, account.password)
-
-                data = fetch_provider_locations(jwt)
-                if not data:
-                    logging.error("Failed to fetch provider locations in scheduler job.")
-                    return
-
-                timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                for location in data.get("locations", []):
-                    provider_count = ProviderCount(
-                        timestamp=timestamp,
-                        country_code=location["country_code"].lower(),
-                        country_name=location["name"],
-                        provider_count=location["provider_count"]
-                    )
-                    db.session.merge(provider_count)
-                db.session.commit()
-                logging.info(f"Successfully polled and saved provider counts at {timestamp}")
-            except Exception as e:
-                logging.error(f"Error in poll_providers_job: {e}")
-                db.session.rollback()
-
-    @scheduler.task(id="cleanup_offline_devices_job", trigger="interval", hours=6)
-    def cleanup_offline_devices_job():
-        """Removes devices that have been offline for more than 7 days using auth_time."""
-        import time
-        from dateutil.parser import isoparse
-        
-        now = datetime.datetime.now(datetime.timezone.utc)
-        cutoff = now - datetime.timedelta(days=7)
-        
-        with app.app_context():
-            accounts = Account.query.filter_by(is_active=True).all()
-            for account in accounts:
-                try:
-                    jwt = get_jwt_from_credentials(account.username, account.password)
-                    if not jwt: continue
-                    devices = fetch_devices(jwt)
-                    for d in devices:
-                        client_id = d.get('client_id')
-                        if not client_id: continue
-                        
-                        is_online = 'connections' in d and len(d['connections']) > 0
-                        if is_online:
-                            continue
-                            
-                        auth_time_str = d.get('auth_time')
-                        if not auth_time_str:
-                            continue
-                            
-                        try:
-                            auth_time = isoparse(auth_time_str)
-                            if auth_time < cutoff:
-                                logging.info(f"Removing device {client_id} (offline since {auth_time_str})")
-                                remove_device(jwt, client_id)
-                                time.sleep(0.1) # anti rate limit
-                        except Exception:
-                            pass
-                except Exception as e:
-                    logging.error(f"Error in cleanup_offline_devices_job for {account.username}: {e}")
-
-    # Run initial sync for provider counts if the table is empty
+def log_stats_job(app) -> None:
+    """Fetch and store one snapshot per active account."""
     with app.app_context():
         try:
-            if db.session.query(ProviderCount).count() == 0:
-                logging.info("Provider counts table is empty. Running initial sync on startup...")
-                jwt = None
-                account = Account.query.filter_by(is_active=True).first()
-                if account:
-                    jwt = get_jwt_from_credentials(account.username, account.password)
-                data = fetch_provider_locations(jwt)
-                if data:
-                    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                    for location in data.get("locations", []):
-                        provider_count = ProviderCount(
-                            timestamp=timestamp,
-                            country_code=location["country_code"].lower(),
-                            country_name=location["name"],
-                            provider_count=location["provider_count"]
-                        )
-                        db.session.merge(provider_count)
+            for account in Account.query.filter_by(is_active=True).all():
+                try:
+                    jwt = authenticate_account(account, app)
+                    if not jwt:
+                        continue
+                    data = fetch_transfer_stats(jwt)
+                    if not data:
+                        logging.warning("No transfer statistics returned for account id %s.", account.id)
+                        continue
+                    previous = (
+                        Stats.query.filter_by(account_id=account.id)
+                        .order_by(Stats.timestamp.desc(), Stats.id.desc())
+                        .first()
+                    )
+                    current = Stats(
+                        account_id=account.id,
+                        timestamp=_utc_now(),
+                        paid_bytes=int(data["paid_bytes"]),
+                        paid_gb=float(data["paid_gb"]),
+                        unpaid_bytes=int(data["unpaid_bytes"]),
+                        unpaid_gb=float(data["unpaid_gb"]),
+                    )
+                    db.session.add(current)
                     db.session.commit()
-                    logging.info("Initial sync of provider counts completed successfully.")
-        except Exception as e:
-            logging.error(f"Failed to run initial sync of provider counts: {e}")
+                    send_webhook_notification(app, account, current, previous)
+                except Exception:
+                    db.session.rollback()
+                    logging.exception("Statistics job failed for account id %s.", account.id)
+        except Exception:
             db.session.rollback()
+            logging.exception("Statistics collection job failed before account processing completed.")
+        finally:
+            db.session.remove()
 
+
+SUMMARY_INTERVAL_MINUTES = {"30m": 30, "1h": 60, "12h": 12 * 60, "1d": 24 * 60}
+
+
+def _summary_due(webhook: Webhook, now: dt.datetime) -> bool:
+    if webhook.summary_interval == "30m":
+        return now.minute in {0, 30}
+    if webhook.summary_interval == "1h":
+        return now.minute == 0
+    if webhook.summary_interval == "12h":
+        return now.hour in {0, 12} and now.minute == 0
+    if webhook.summary_interval == "1d":
+        return now.hour == 0 and now.minute == 0
+    return False
+
+
+def _summary_was_delivered_in_current_slot(webhook: Webhook, now: dt.datetime) -> bool:
+    """Avoid duplicate summaries when a scheduler process restarts mid-slot."""
+    last_sent = webhook.last_summary_at
+    interval_minutes = SUMMARY_INTERVAL_MINUTES.get(webhook.summary_interval)
+    return bool(last_sent and interval_minutes and last_sent > now - dt.timedelta(minutes=interval_minutes))
+
+
+def periodic_summary_job(app) -> None:
+    """Deliver clock-aligned summaries and leave sessions clean on every path."""
+    with app.app_context():
+        try:
+            now = _utc_now()
+            accounts = Account.query.filter_by(is_active=True).all()
+            for webhook in Webhook.query.filter_by(on_summary=True).all():
+                if not _summary_due(webhook, now) or _summary_was_delivered_in_current_slot(webhook, now):
+                    continue
+
+                delivered_any = False
+                for account in accounts:
+                    latest = (
+                        Stats.query.filter_by(account_id=account.id)
+                        .order_by(Stats.timestamp.desc(), Stats.id.desc())
+                        .first()
+                    )
+                    if not latest:
+                        continue
+                    s30m = sum(get_traffic_delta(account.id, 30))
+                    s1h = sum(get_traffic_delta(account.id, 60))
+                    s12h = sum(get_traffic_delta(account.id, 12 * 60))
+                    s1d = sum(get_traffic_delta(account.id, 24 * 60))
+                    totals = {"30m": s30m, "1h": s1h, "12h": s12h, "1d": s1d}
+                    if totals.get(webhook.summary_interval, 0) <= 0:
+                        continue
+                    default_payload = {
+                        "embeds": [
+                            {
+                                "title": f"📊 Traffic Summary - {account.nickname or account.username}",
+                                "color": 9124843,
+                                "fields": [
+                                    {
+                                        "name": "Total Shared",
+                                        "value": format_bytes(latest.paid_bytes + latest.unpaid_bytes),
+                                        "inline": True,
+                                    },
+                                    {
+                                        "name": "Summary Windows",
+                                        "value": (
+                                            f"**Last 30m:** {format_bytes(s30m)}\n"
+                                            f"**Last 1h:** {format_bytes(s1h)}\n"
+                                            f"**Last 12h:** {format_bytes(s12h)}\n"
+                                            f"**Last 24h:** {format_bytes(s1d)}"
+                                        ),
+                                        "inline": False,
+                                    },
+                                ],
+                                "footer": {"text": f"Interval: {webhook.summary_interval}"},
+                                "timestamp": now.replace(tzinfo=dt.UTC).isoformat().replace("+00:00", "Z"),
+                            }
+                        ]
+                    }
+                    payload = render_payload(webhook, default_payload, _webhook_substitutions(account, latest, now))
+                    delivered, _ = deliver_webhook(
+                        webhook, payload, allowed_hosts=app.config["WEBHOOK_ALLOWED_HOSTS"]
+                    )
+                    delivered_any = delivered_any or delivered
+                if delivered_any:
+                    webhook.last_summary_at = now
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logging.exception("Periodic webhook summary job failed.")
+        finally:
+            db.session.remove()
+
+
+def cleanup_old_stats_job(app) -> None:
+    with app.app_context():
+        try:
+            account_cutoff = _utc_now() - dt.timedelta(days=app.config["STATS_RETENTION_DAYS"])
+            provider_cutoff = _snapshot_timestamp(
+                _utc_now() - dt.timedelta(days=app.config["PROVIDER_STATS_RETENTION_DAYS"])
+            )
+            account_deleted = (
+                db.session.query(Stats)
+                .filter(Stats.timestamp < account_cutoff)
+                .delete(synchronize_session=False)
+            )
+            provider_deleted = (
+                db.session.query(ProviderCount)
+                .filter(ProviderCount.timestamp < provider_cutoff)
+                .delete(synchronize_session=False)
+            )
+            db.session.commit()
+            logging.info(
+                "Retention cleanup removed %s account and %s provider snapshots.",
+                account_deleted,
+                provider_deleted,
+            )
+        except Exception:
+            db.session.rollback()
+            logging.exception("Retention cleanup failed.")
+        finally:
+            db.session.remove()
+
+
+def poll_provider_counts_job(app) -> None:
+    """Fetch one global provider-country snapshot and invalidate route caches."""
+    with app.app_context():
+        try:
+            data = fetch_provider_locations()
+            locations = (data or {}).get("locations", [])
+            if not locations:
+                logging.warning("Provider polling returned no locations; keeping existing snapshot.")
+                return
+            timestamp = _snapshot_timestamp()
+            stored = 0
+            for location in locations:
+                if not isinstance(location, dict):
+                    continue
+                code = str(location.get("country_code", "")).lower()
+                name = str(location.get("name", "")).strip()
+                count = location.get("provider_count")
+                if len(code) != 2 or not code.isalpha() or not name or len(name) > 100:
+                    continue
+                try:
+                    count = int(count)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if not 0 <= count <= 9_223_372_036_854_775_807:
+                    continue
+                db.session.merge(
+                    ProviderCount(
+                        timestamp=timestamp,
+                        country_code=code,
+                        country_name=name,
+                        provider_count=max(0, count),
+                    )
+                )
+                stored += 1
+            if not stored:
+                db.session.rollback()
+                logging.warning("Provider polling returned no valid country records; keeping existing snapshot.")
+                return
+            db.session.commit()
+            from backend.routes import clear_provider_api_cache
+
+            clear_provider_api_cache()
+            logging.info("Stored provider snapshot at %s.", timestamp)
+        except Exception:
+            db.session.rollback()
+            logging.exception("Provider polling failed.")
+        finally:
+            db.session.remove()
+
+
+def cleanup_offline_devices_job(app) -> None:
+    """Optionally remove stale devices; disabled unless explicitly opted in."""
+    if not app.config["AUTO_REMOVE_OFFLINE_DEVICES"]:
+        return
+    with app.app_context():
+        try:
+            cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=7)
+            for account in Account.query.filter_by(is_active=True).all():
+                try:
+                    jwt = authenticate_account(account, app)
+                    if not jwt:
+                        continue
+                    for device in fetch_devices(jwt) or []:
+                        client_id = device.get("client_id")
+                        if not client_id or device.get("connections"):
+                            continue
+                        auth_time_value = device.get("auth_time")
+                        if not auth_time_value:
+                            continue
+                        try:
+                            from dateutil.parser import isoparse
+
+                            auth_time = isoparse(auth_time_value)
+                            if auth_time.tzinfo is None:
+                                auth_time = auth_time.replace(tzinfo=dt.UTC)
+                        except (TypeError, ValueError):
+                            logging.warning("Skipping device with invalid auth_time for account id %s.", account.id)
+                            continue
+                        if auth_time < cutoff:
+                            success, _ = remove_device(jwt, client_id)
+                            if success:
+                                logging.info("Removed opted-in stale device %s from account id %s.", client_id, account.id)
+                            # Keep automated mutation traffic gentle even for a
+                            # large account, regardless of upstream cache state.
+                            time.sleep(0.1)
+                except Exception:
+                    logging.exception("Stale-device cleanup failed for account id %s.", account.id)
+        except Exception:
+            db.session.rollback()
+            logging.exception("Offline-device cleanup job failed.")
+        finally:
+            db.session.remove()
+
+
+def _add_job(identifier: str, function, *, trigger: str, **kwargs) -> None:
+    scheduler.add_job(
+        id=identifier,
+        func=function,
+        trigger=trigger,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=300,
+        **kwargs,
+    )
+
+
+def init_scheduler(app) -> None:
+    """Start scheduler jobs only in the explicitly designated process."""
+    if not app.config["SCHEDULER_ENABLED"]:
+        logging.info("Background scheduler disabled by RUN_SCHEDULER.")
+        return
+    if scheduler.running:
+        logging.warning("Scheduler is already running; not registering duplicate jobs.")
+        return
+
+    scheduler.init_app(app)
+    _add_job("log_stats_job", lambda: log_stats_job(app), trigger="cron", minute="0,15,30,45", timezone="UTC")
+    _add_job("periodic_summary_job", lambda: periodic_summary_job(app), trigger="cron", minute="0,15,30,45", timezone="UTC")
+    _add_job("cleanup_old_stats_job", lambda: cleanup_old_stats_job(app), trigger="cron", hour="3", minute="0", timezone="UTC")
+    _add_job("poll_provider_counts_job", lambda: poll_provider_counts_job(app), trigger="cron", minute="2", timezone="UTC")
+    _add_job("cleanup_offline_devices_job", lambda: cleanup_offline_devices_job(app), trigger="interval", hours=6)
+
+    with app.app_context():
+        provider_data_empty = db.session.query(ProviderCount).count() == 0
+    if provider_data_empty:
+        # Do not make an external HTTP request in create_app(). The one-time
+        # task starts just after the scheduler, leaving web startup responsive.
+        _add_job(
+            "initial_provider_sync",
+            lambda: poll_provider_counts_job(app),
+            trigger="date",
+            run_date=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=1),
+        )
     scheduler.start()

@@ -1,34 +1,53 @@
-# Project Overview
-UrNetwork Stats Dashboard is a Python Flask web application designed to track, log, and display BringYour.io bandwidth usage statistics. 
+# Project overview
 
-The repository currently contains two versions of the application:
-1. **Enhanced Multi-Account Edition (Root Directory):** Located in `main.py`. This is a more advanced version featuring multi-account support, a React-based private dashboard, global leaderboards, device management, webhooks, and internationalization (i18n).
-2. **Single-Account Legacy Edition (`good/` Directory):** Located in `good/app.py`. A simpler version focused on tracking a single account, with basic Bootstrap UI and dark/light mode toggle.
+URnetwork Stats Dashboard is a self-hosted Flask API and React single-page
+application for tracking BringYour/URnetwork usage, accounts, devices, wallets,
+provider history, and optional Discord webhooks.
 
-Both versions use SQLite for persistent data storage, SQLAlchemy as the ORM, and APScheduler to periodically fetch and log data from the BringYour API. A `migrate.py` script is provided to upgrade the SQLite database from the single-account structure to the multi-account structure.
+## Architecture
 
-# Building and Running
+- `main.py` exposes the WSGI application (`main:app`) and local development
+  entry point.
+- `backend/app.py` contains the Flask application factory.
+- `backend/routes.py` contains the JSON API and public provider analytics.
+- `backend/scheduler.py` contains collection, retention, and webhook jobs.
+- `backend/ur_api.py` is the defensive client for `api.bringyour.com`.
+- `frontend/` is the Vite/React application; built assets are served by Flask.
+- `tests/` contains isolated SQLite regression and security tests.
 
-## Enhanced Multi-Account Edition (`main.py`)
-1. **Dependencies:** Install the required Python packages (e.g., Flask, flask_sqlalchemy, flask_apscheduler, requests, python-dateutil).
-2. **Environment:** The application uses a `.env` file for configuration. It features a built-in setup wizard. If no configuration is detected, visiting the app in a browser will redirect you to an `/install` route to set an admin password.
-3. **Execution:** Run the application using standard Python: `python main.py`.
+## Development
 
-## Legacy Single-Account Edition (`good/app.py`)
-1. **Dependencies:** Listed in `good/requirements.txt`. Install via `pip install -r good/requirements.txt`.
-2. **Environment:** Copy `good/.env.example` to `good/.env` and configure your `UR_USER` and `UR_PASS` (or `UR_JWT`).
-3. **Execution:** 
-   - **Locally:** Run `python good/app.py` (binds to port 92 by default).
-   - **Docker:** The `good/` directory contains a `Dockerfile`. You can build and run it using:
-     ```bash
-     docker build -t urnetwork-stats-dashboard good/
-     docker run -d --env-file good/.env -p 90:92 --name urnetwork-stats-dashboard urnetwork-stats-dashboard
-     ```
+Use Python 3.11+ and Node.js 22+:
 
-# Development Conventions
-- **Frameworks:** Built on Flask, with SQLite databases typically stored in an `instance/` directory (`instance/transfer_stats.db`).
-- **Scheduling:** APScheduler is used to run background jobs (e.g., fetching stats every 15 minutes, cleaning up old stats daily).
-- **Frontend (Main App):** Uses vanilla HTML/CSS/JS for the public view and React (via CDN and Babel standalone) for the private admin dashboard.
-- **Frontend (Legacy App):** Uses server-side rendered HTML with Bootstrap 5.
-- **Security:** Credentials and sensitive settings are managed via `.env` files. The main app hashes/manages access via an admin password set during installation.
-- **API Integration:** Makes HTTP requests to the `api.bringyour.com` endpoints with built-in retry logic.
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+(cd frontend && npm ci)
+
+python -m pytest -q
+(cd frontend && npm run lint && npm run build)
+```
+
+For local development, keep the scheduler out of the web process unless testing
+jobs explicitly:
+
+```bash
+RUN_SCHEDULER=false python main.py
+(cd frontend && npm run dev -- --host 0.0.0.0)
+```
+
+The browser must use relative `/api` paths. Vite proxies those requests to the
+local Flask server during development.
+
+## Security and operations
+
+- Never commit `.env`, database files, tokens, passwords, or webhook URLs.
+- The setup wizard writes a password hash, Flask secret, and credential
+  encryption key to the private environment file. Back up that file with the
+  database.
+- All unsafe API routes require a CSRF token from `/api/status`.
+- Only one process may run with `RUN_SCHEDULER=true`; all additional Gunicorn
+  workers/replicas must disable it.
+- See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for Docker, reverse proxy,
+  CORS, backup, and production configuration guidance.

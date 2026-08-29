@@ -1,26 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiFetch, apiJson, errorMessage } from '../lib/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
 function OverviewTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [viewMode, setViewMode] = useState('combined');
 
   useEffect(() => {
-    fetch('/api/dashboard/overview')
-      .then(res => res.json())
-      .then(data => {
-        setData(data);
-        setLoading(false);
-      });
-  }, []);
+    let cancelled = false;
+    const loadOverview = async () => {
+      try {
+        const result = await apiJson('/api/dashboard/overview');
+        if (cancelled) return;
+        setData(result);
+        setError('');
+      } catch (requestError) {
+        if (!cancelled) setError(errorMessage(requestError, t('Could not load dashboard data.', 'Data dashboardu se nepodařilo načíst.')));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void loadOverview();
+    return () => { cancelled = true; };
+  }, [t]);
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div>;
-  if (!data) return <div className="text-center py-10 text-red-500">{t("Failed to load data.", "Nepodařilo se načíst data.")}</div>;
+  if (!data) return <div role="alert" className="text-center py-10 text-red-500">{error || t("Failed to load data.", "Nepodařilo se načíst data.")}</div>;
 
   const combinedData = data.combined_chart.labels.map((label, idx) => ({
     time: label,
@@ -100,73 +111,104 @@ function OverviewTab({ lang = 'cs' }) {
 
 function AccountInfoTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedAcc, setSelectedAcc] = useState('all');
+  const [error, setError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`/api/dashboard/account?account_id=${selectedAcc}`)
-      .then(res => res.json())
-      .then(data => {
-        setData(data);
-        setLoading(false);
-      });
-  }, [selectedAcc]);
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setLoading(true);
+      apiJson(`/api/dashboard/account?account_id=${encodeURIComponent(selectedAcc)}`)
+        .then((nextData) => {
+          if (cancelled) return;
+          setData(nextData);
+          setError('');
+        })
+        .catch((requestError) => {
+          if (cancelled) return;
+          setData(null);
+          setError(errorMessage(requestError, t('Could not load account data.', 'Data účtu se nepodařilo načíst.')));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [selectedAcc, refreshKey, t]);
+
+  const refreshAccount = () => setRefreshKey((current) => current + 1);
 
   const toggleVisibility = async () => {
-    if(!data.account_details || !selectedAcc || selectedAcc === 'all') return;
+    if (!data?.account_details || !selectedAcc || selectedAcc === 'all') return;
     const isPublic = data.account_details.ranking?.leaderboard_public;
-    const res = await fetch('/api/dashboard/network/visibility', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, is_public: !isPublic })
-    });
-    if(res.ok) {
-       setData(prev => ({...prev, account_details: {...prev.account_details, ranking: {...prev.account_details.ranking, leaderboard_public: !isPublic}}}));
-    } else {
-       const d = await res.json(); alert(d.error || 'Failed');
+    try {
+      await apiJson('/api/dashboard/network/visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, is_public: !isPublic }),
+      });
+      setData((current) => ({
+        ...current,
+        account_details: {
+          ...current.account_details,
+          ranking: { ...current.account_details.ranking, leaderboard_public: !isPublic },
+        },
+      }));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not update ranking visibility.', 'Viditelnost žebříčku se nepodařilo upravit.')));
     }
   };
 
   const handleSetReferral = async () => {
-    const code = prompt(t("Enter the referral code of the network that referred you:", "Zadejte doporučující kód sítě, která vás doporučila:"));
-    if(!code) return;
-    const res = await fetch('/api/dashboard/network/set-referral', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, referral_code: code })
-    });
-    if(res.ok) {
-       window.location.reload();
-    } else {
-       const d = await res.json(); alert(d.error);
+    const code = window.prompt(t("Enter the referral code of the network that referred you:", "Zadejte doporučující kód sítě, která vás doporučila:"));
+    if (!code?.trim()) return;
+    try {
+      await apiJson('/api/dashboard/network/set-referral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, referral_code: code.trim() }),
+      });
+      refreshAccount();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not set referral network.', 'Doporučující síť se nepodařilo nastavit.')));
     }
   };
-  
+
   const handleUnlinkReferral = async () => {
-    if(!confirm(t("Unlink referral network?", "Odpojit doporučující síť?"))) return;
-    const res = await fetch('/api/dashboard/network/unlink-referral', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc })
-    });
-    if(res.ok) {
-       window.location.reload();
-    } else {
-       const d = await res.json(); alert(d.error);
+    if (!window.confirm(t("Unlink referral network?", "Odpojit doporučující síť?"))) return;
+    try {
+      await apiJson('/api/dashboard/network/unlink-referral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc }),
+      });
+      refreshAccount();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not unlink referral network.', 'Doporučující síť se nepodařilo odpojit.')));
     }
   };
 
   const handleRedeemCode = async () => {
-    const secret = prompt(t("Enter your balance code secret:", "Zadejte tajný kód zůstatku:"));
-    if(!secret) return;
-    const res = await fetch('/api/dashboard/subscription/redeem', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, secret })
-    });
-    const d = await res.json();
-    alert(d.message || d.error);
-    if(res.ok) window.location.reload();
+    const secret = window.prompt(t("Enter your balance code secret:", "Zadejte tajný kód zůstatku:"));
+    if (!secret) return;
+    try {
+      const result = await apiJson('/api/dashboard/subscription/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, secret }),
+      });
+      window.alert(result.message || t('Balance code redeemed.', 'Kód zůstatku byl uplatněn.'));
+      refreshAccount();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not redeem balance code.', 'Kód zůstatku se nepodařilo uplatnit.')));
+    }
   };
 
   const [authCode, setAuthCode] = useState(null);
@@ -179,48 +221,74 @@ function AccountInfoTab({ lang = 'cs' }) {
     setAuthCodeLoading(true);
     setAuthCode(null);
     setAuthCodeCopied(false);
-    const res = await fetch('/api/dashboard/generate-auth-code', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, uses: 1, duration_minutes: authCodeDuration })
-    });
-    const d = await res.json();
-    setAuthCodeLoading(false);
-    if (d.auth_code) setAuthCode(d.auth_code);
-    else alert(d.error || t('Failed to generate auth code', 'Nepodařilo se vygenerovat auth kód'));
+    try {
+      const result = await apiJson('/api/dashboard/generate-auth-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, uses: 1, duration_minutes: authCodeDuration }),
+      });
+      if (result.auth_code) setAuthCode(result.auth_code);
+      else setError(t('URnetwork did not return an auth code.', 'URnetwork nevrátil auth kód.'));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not generate auth code.', 'Auth kód se nepodařilo vygenerovat.')));
+    } finally {
+      setAuthCodeLoading(false);
+    }
   };
 
-  const handleCopyAuthCode = () => {
+  const handleCopyAuthCode = async () => {
     if (!authCode) return;
-    navigator.clipboard.writeText(authCode);
-    setAuthCodeCopied(true);
-    setTimeout(() => setAuthCodeCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(authCode);
+      setAuthCodeCopied(true);
+      window.setTimeout(() => setAuthCodeCopied(false), 2000);
+    } catch {
+      setError(t('Could not copy the auth code.', 'Auth kód se nepodařilo zkopírovat.'));
+    }
   };
 
   const [associations, setAssociations] = useState(null);
   const [blockedLocs, setBlockedLocs] = useState([]);
   useEffect(() => {
-    if(selectedAcc && selectedAcc !== 'all') {
-      fetch(`/api/dashboard/network/locations/blocked?account_id=${selectedAcc}`)
-        .then(res => res.json())
-        .then(d => setBlockedLocs(d.blocked_locations || []));
-      
-      fetch(`/api/dashboard/devices/associations?account_id=${selectedAcc}`)
-        .then(res => res.json())
-        .then(d => setAssociations(d));
-    } else {
-      setBlockedLocs([]);
-      setAssociations(null);
-    }
-  }, [selectedAcc]);
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      if (selectedAcc && selectedAcc !== 'all') {
+        Promise.all([
+          apiJson(`/api/dashboard/network/locations/blocked?account_id=${encodeURIComponent(selectedAcc)}`),
+          apiJson(`/api/dashboard/devices/associations?account_id=${encodeURIComponent(selectedAcc)}`),
+        ]).then(([locations, nextAssociations]) => {
+          if (cancelled) return;
+          setBlockedLocs(locations.blocked_locations || []);
+          setAssociations(nextAssociations);
+        }).catch((requestError) => {
+          if (cancelled) return;
+          setBlockedLocs([]);
+          setAssociations(null);
+          setError(errorMessage(requestError, t('Could not load account connections.', 'Připojení účtu se nepodařilo načíst.')));
+        });
+      } else {
+        setBlockedLocs([]);
+        setAssociations(null);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [selectedAcc, t]);
 
   const handleUnblock = async (locId) => {
-    await fetch('/api/dashboard/network/locations/unblock', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, location_id: locId })
-    });
-    fetch(`/api/dashboard/network/locations/blocked?account_id=${selectedAcc}`)
-        .then(res => res.json())
-        .then(d => setBlockedLocs(d.blocked_locations || []));
+    try {
+      await apiJson('/api/dashboard/network/locations/unblock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, location_id: locId }),
+      });
+      const locations = await apiJson(`/api/dashboard/network/locations/blocked?account_id=${encodeURIComponent(selectedAcc)}`);
+      setBlockedLocs(locations.blocked_locations || []);
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not unblock location.', 'Lokalitu se nepodařilo odblokovat.')));
+    }
   };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div>;
@@ -228,6 +296,7 @@ function AccountInfoTab({ lang = 'cs' }) {
 
   return (
     <div className="space-y-6">
+      {error && <div role="alert" className="bg-red-500/10 border-l-4 border-red-500 p-4 text-red-400">{error}</div>}
       <div className="flex items-center justify-between mb-2">
         <select className="input max-w-xs" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
           <option value="all">{t("All Accounts", "Všechny účty")}</option>
@@ -423,103 +492,138 @@ function AccountInfoTab({ lang = 'cs' }) {
 
 function DevicesTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
   const [devices, setDevices] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const devicesAbortRef = useRef(null);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
-  const fetchDevices = () => {
+  const fetchDevices = useCallback(async () => {
+    devicesAbortRef.current?.abort();
+    const controller = new AbortController();
+    devicesAbortRef.current = controller;
     setLoading(true);
+    setError('');
     setDevices([]);
-    fetch('/api/dashboard/devices/stream')
-      .then(async response => {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let done = false;
-        let buffer = "";
-        
-        setLoading(false);
-        while (!done) {
-          const { value, done: doneReading } = await reader.read();
-          done = doneReading;
-          if (value) {
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            
-            // Keep the last partial line in the buffer
-            buffer = lines.pop();
-            
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('data: ')) {
-                const jsonStr = trimmed.substring(6).trim();
-                if (jsonStr && jsonStr !== '{}') {
-                  try {
-                    const data = JSON.parse(jsonStr);
-                    if (data && data.length > 0) {
-                      setDevices(prev => [...(prev || []), ...data]);
-                    }
-                  } catch (e) {
-                    console.error("SSE parse error", e, "on string:", jsonStr);
-                  }
-                }
-              }
+    setCurrentPage(1);
+    try {
+      const response = await apiFetch('/api/dashboard/devices/stream', { signal: controller.signal });
+      if (!response.ok || !response.body) throw new Error('Could not load device stream.');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      if (!controller.signal.aborted) setLoading(false);
+
+      while (!controller.signal.aborted) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          const jsonString = trimmed.slice(6).trim();
+          if (!jsonString || jsonString === '{}') continue;
+          try {
+            const batch = JSON.parse(jsonString);
+            if (Array.isArray(batch) && batch.length && !controller.signal.aborted) {
+              setDevices((current) => [...(current || []), ...batch]);
+            } else if (batch && typeof batch === 'object' && typeof batch.error === 'string') {
+              setError(batch.error);
             }
+          } catch {
+            // Skip a malformed SSE event while preserving successfully loaded devices.
+            setError(t('Some device data could not be read.', 'Část dat zařízení se nepodařilo načíst.'));
           }
         }
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  };
+      }
+    } catch (requestError) {
+      if (!controller.signal.aborted) {
+        setError(errorMessage(requestError, t('Could not load devices.', 'Zařízení se nepodařilo načíst.')));
+      }
+    } finally {
+      if (devicesAbortRef.current === controller) {
+        devicesAbortRef.current = null;
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+  }, [t]);
 
-  useEffect(() => { fetchDevices(); }, []);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { void fetchDevices(); }, 0);
+    return () => {
+      window.clearTimeout(timeout);
+      devicesAbortRef.current?.abort();
+      devicesAbortRef.current = null;
+    };
+  }, [fetchDevices]);
 
   const handleRemove = async (accId, clientId) => {
-    if (!confirm(t("Are you sure you want to remove this device?", "Opravdu chcete toto zařízení odebrat?"))) return;
-    const res = await fetch(`/api/dashboard/devices/remove/${accId}/${clientId}`, { method: 'POST' });
-    const data = await res.json();
-    if (res.ok) alert(data.message);
-    else alert(data.error);
-    fetchDevices();
+    if (!window.confirm(t("Are you sure you want to remove this device?", "Opravdu chcete toto zařízení odebrat?"))) return;
+    try {
+      const result = await apiJson(`/api/dashboard/devices/remove/${encodeURIComponent(accId)}/${encodeURIComponent(clientId)}`, { method: 'POST' });
+      window.alert(result.message || t('Device removed.', 'Zařízení bylo odebráno.'));
+      await fetchDevices();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not remove device.', 'Zařízení se nepodařilo odebrat.')));
+    }
   };
 
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [deviceStats, setDeviceStats] = useState(null);
 
-  const viewStats = async (dev) => {
-    setSelectedDevice(dev);
+  const viewStats = async (device) => {
+    setSelectedDevice(device);
     setDeviceStats(null);
-    const res = await fetch(`/api/dashboard/devices/stats?account_id=${dev.account_id}&client_id=${dev.client_id}`);
-    const data = await res.json();
-    setDeviceStats(data);
+    try {
+      const result = await apiJson(`/api/dashboard/devices/stats?account_id=${encodeURIComponent(device.account_id)}&client_id=${encodeURIComponent(device.client_id)}`);
+      setDeviceStats(result);
+    } catch (requestError) {
+      setSelectedDevice(null);
+      setError(errorMessage(requestError, t('Could not load device statistics.', 'Statistiky zařízení se nepodařilo načíst.')));
+    }
   };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div>;
 
   const handleProvideModeChange = async (accId, clientId, modeStr) => {
-    const modes = {"Default": -1, "None": 0, "Network": 1, "Friends & Family": 2, "Public": 3, "Stream": 4};
+    const modes = { Default: -1, None: 0, Network: 1, 'Friends & Family': 2, Public: 3, Stream: 4 };
     const mode = modes[modeStr];
     if (mode === undefined) return;
-    const res = await fetch('/api/dashboard/devices/set-provide', { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: accId, client_id: clientId, provide_mode: mode })
-    });
-    if (res.ok) {
-       setDevices(prev => prev.map(d => d.client_id === clientId ? {...d, provide_mode_str: modeStr} : d));
-    } else {
-       const data = await res.json();
-       alert(data.error || t('Failed to update mode', 'Nepodařilo se aktualizovat režim'));
+    try {
+      await apiJson('/api/dashboard/devices/set-provide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accId, client_id: clientId, provide_mode: mode }),
+      });
+      setDevices((current) => current.map((device) => device.client_id === clientId ? { ...device, provide_mode_str: modeStr } : device));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not update mode.', 'Režim se nepodařilo aktualizovat.')));
+    }
+  };
+
+  const handleRename = async (device) => {
+    const newName = window.prompt(t('Enter new device name:', 'Zadejte nový název zařízení:'), device.device_name || '');
+    if (!newName?.trim() || newName.trim() === device.device_name) return;
+    try {
+      await apiJson('/api/dashboard/devices/set-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: device.account_id, device_id: device.device_id, name: newName.trim() }),
+      });
+      await fetchDevices();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not rename device.', 'Zařízení se nepodařilo přejmenovat.')));
     }
   };
 
   const filteredDevices = devices ? devices.filter(d => 
-    (d.device_name || '').toLowerCase().includes(search.toLowerCase()) || 
-    (d.client_id || '').toLowerCase().includes(search.toLowerCase()) || 
+    (d.device_name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (d.client_id || '').toLowerCase().includes(search.toLowerCase()) ||
     (d.account_nickname || '').toLowerCase().includes(search.toLowerCase())
   ) : [];
 
@@ -528,15 +632,16 @@ function DevicesTab({ lang = 'cs' }) {
 
   return (
     <div className="card p-0 overflow-hidden">
+      {error && <div role="alert" className="m-4 bg-red-500/10 border-l-4 border-red-500 p-4 text-red-400">{error}</div>}
       <div className="p-6 border-b border-[#333] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-[#ededed]">{t("Device Management", "Správa zařízení")}</h3>
           <p className="text-sm text-[#888] mt-1">{t("Monitor and manage clients connected to your networks.", "Sledujte a spravujte klienty připojené k vašim sítím.")}</p>
         </div>
         <div className="flex gap-2">
-          <input 
-            type="text" 
-            placeholder={t("Search devices...", "Hledat zařízení...")} 
+          <input
+            type="text"
+            placeholder={t("Search devices...", "Hledat zařízení...")}
             className="input w-64 text-sm"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
@@ -574,27 +679,18 @@ function DevicesTab({ lang = 'cs' }) {
                 <td className="py-4 px-6 font-medium text-[#ededed]">
                   <div className="flex items-center gap-2 group">
                     <span>{dev.device_name || t('Unnamed Device', 'Nepojmenované zařízení')}</span>
-                    <button 
+                    <button
+                      type="button"
                       className="text-[#0070f3] opacity-0 group-hover:opacity-100 transition-opacity text-[10px]"
-                      onClick={async () => {
-                        const newName = prompt("Enter new device name:", dev.device_name || '');
-                        if (newName && newName !== dev.device_name) {
-                          const res = await fetch('/api/dashboard/devices/set-name', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ account_id: dev.account_id, device_id: dev.device_id, name: newName })
-                          });
-                          if(res.ok) fetchDevices();
-                          else alert((await res.json()).error);
-                        }
-                      }}
+                      onClick={() => void handleRename(dev)}
                     >{t("Rename", "Přejmenovat")}</button>
                   </div>
                 </td>
                 <td className="py-4 px-6 font-mono text-xs text-[#888]">{dev.client_id}</td>
                 <td className="py-4 px-6 text-[#a1a1aa]">
-                  <select 
-                    className="bg-[#222] border border-[#333] text-[#ededed] text-xs rounded px-2 py-1 outline-none" 
-                    value={dev.provide_mode_str} 
+                  <select
+                    className="bg-[#222] border border-[#333] text-[#ededed] text-xs rounded px-2 py-1 outline-none"
+                    value={dev.provide_mode_str}
                     onChange={e => handleProvideModeChange(dev.account_id, dev.client_id, e.target.value)}
                   >
                     <option value="Default">Default</option>
@@ -625,7 +721,7 @@ function DevicesTab({ lang = 'cs' }) {
               <h3 className="text-xl font-bold">{t("Device Insights:", "Podrobnosti o zařízení:")} {selectedDevice.device_name || 'Unnamed'}</h3>
               <button onClick={() => setSelectedDevice(null)} className="text-[#888] hover:text-white">✕</button>
             </div>
-            
+
             {!deviceStats ? <div className="py-20 flex justify-center"><div className="w-6 h-6 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div></div> : (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
@@ -662,14 +758,14 @@ function DevicesTab({ lang = 'cs' }) {
             {t("Showing", "Zobrazeno")} <span className="text-[#ededed]">{(currentPage - 1) * itemsPerPage + 1}</span> {t("to", "až")} <span className="text-[#ededed]">{Math.min(currentPage * itemsPerPage, filteredDevices.length)}</span> {t("of", "z")} <span className="text-[#ededed]">{filteredDevices.length}</span> {t("devices", "zařízení")}
           </div>
           <div className="flex gap-2">
-            <button 
+            <button
               className="btn btn-secondary text-xs px-3 py-1.5"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             >
               {t("Previous", "Předchozí")}
             </button>
-            <button 
+            <button
               className="btn btn-secondary text-xs px-3 py-1.5"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
@@ -685,75 +781,110 @@ function DevicesTab({ lang = 'cs' }) {
 
 function ApiKeysTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
   const [newKeyName, setNewKeyName] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [removingKeyId, setRemovingKeyId] = useState(null);
 
   useEffect(() => {
-    fetch('/api/dashboard/account')
-      .then(res => res.json())
-      .then(d => {
-        setAccounts(d.accounts || []);
-        if (d.accounts && d.accounts.length > 0) {
-          setSelectedAcc(d.accounts[0].id);
-        }
-      });
-  }, []);
+    let cancelled = false;
+    const loadAccounts = async () => {
+      try {
+        const result = await apiJson('/api/dashboard/account');
+        if (cancelled) return;
+        const nextAccounts = result.accounts || [];
+        setAccounts(nextAccounts);
+        setSelectedAcc((current) => current || String(nextAccounts[0]?.id || ''));
+      } catch (requestError) {
+        if (!cancelled) setError(errorMessage(requestError, t('Could not load accounts.', 'Účty se nepodařilo načíst.')));
+      }
+    };
+    void loadAccounts();
+    return () => { cancelled = true; };
+  }, [t]);
 
-  const fetchKeys = () => {
-    if (!selectedAcc) return;
+  const fetchKeys = useCallback(async () => {
+    if (!selectedAcc) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    fetch(`/api/dashboard/api-keys?account_id=${selectedAcc}`)
-      .then(res => res.json())
-      .then(d => {
-        setData(d.api_keys || []);
-        setLoading(false);
+    try {
+      const result = await apiJson(`/api/dashboard/api-keys?account_id=${encodeURIComponent(selectedAcc)}`);
+      setData(result.api_keys || []);
+      setError('');
+    } catch (requestError) {
+      setData([]);
+      setError(errorMessage(requestError, t('Could not load API keys.', 'API klíče se nepodařilo načíst.')));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedAcc, t]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { fetchKeys(); }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [fetchKeys]);
+
+  const handleAdd = async (event) => {
+    event.preventDefault();
+    const name = newKeyName.trim();
+    if (!name || !selectedAcc || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await apiJson('/api/dashboard/api-keys/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, name }),
       });
-  };
-
-  useEffect(() => { fetchKeys(); }, [selectedAcc]);
-
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!newKeyName || !selectedAcc) return;
-    const res = await fetch('/api/dashboard/api-keys/add', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, name: newKeyName })
-    });
-    const result = await res.json();
-    if (res.ok) {
-      alert(`API Key Created!\n\nKey: ${result.api_key}\n\nt("Please save this key now as it won't be shown again.", "Uložte si prosím tento klíč nyní, protože se již znovu nezobrazí.")`);
+      window.alert(`${t('API key created!', 'API klíč byl vytvořen!')}\n\n${t('Key:', 'Klíč:')} ${result.api_key}\n\n${t('Please save this key now; it will not be shown again.', 'Uložte si tento klíč nyní; později se již znovu nezobrazí.')}`);
       setNewKeyName('');
-      fetchKeys();
-    } else {
-      alert(result.error || t("Failed to create API key", "Nepodařilo se vytvořit API klíč"));
+      await fetchKeys();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not create API key.', 'API klíč se nepodařilo vytvořit.')));
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleRemove = async (keyId) => {
-    if (!confirm(t("Remove this API key?", "Odebrat tento API klíč?"))) return;
-    await fetch('/api/dashboard/api-keys/remove', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, key_id: keyId })
-    });
-    fetchKeys();
+    if (!window.confirm(t('Remove this API key?', 'Odebrat tento API klíč?')) || removingKeyId) return;
+    setRemovingKeyId(keyId);
+    setError('');
+    try {
+      await apiJson('/api/dashboard/api-keys/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, key_id: keyId }),
+      });
+      await fetchKeys();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not remove API key.', 'API klíč se nepodařilo odebrat.')));
+    } finally {
+      setRemovingKeyId(null);
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="card">
-        <select className="input max-w-xs mb-6" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
+        {error && <div role="alert" className="mb-6 bg-red-500/10 border-l-4 border-red-500 p-4 text-red-400">{error}</div>}
+        <select className="input max-w-xs mb-6" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)} disabled={accounts.length === 0}>
           {accounts.map(acc => (
             <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
           ))}
         </select>
-        
+
         <form onSubmit={handleAdd} className="flex gap-4 mb-6">
           <input type="text" className="input max-w-sm" placeholder={t("New API Key Name", "Nový název API klíče")} value={newKeyName} onChange={e => setNewKeyName(e.target.value)} required />
-          <button type="submit" className="btn btn-primary">{t("Create Key", "Vytvořit klíč")}</button>
+          <button type="submit" className="btn btn-primary" disabled={!selectedAcc || submitting}>{submitting ? t('Creating…', 'Vytváření…') : t('Create Key', 'Vytvořit klíč')}</button>
         </form>
 
         <h3 className="text-lg font-semibold mb-4 text-[#ededed]">API Keys</h3>
@@ -773,7 +904,7 @@ function ApiKeysTab({ lang = 'cs' }) {
                     <td className="py-3 px-4 font-medium text-[#ededed]">{k.name}</td>
                     <td className="py-3 px-4 text-[#888]">{new Date(k.create_time).toLocaleString()}</td>
                     <td className="py-3 px-4 text-right">
-                      <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(k.id)}>{t("Remove", "Odebrat")}</button>
+                      <button type="button" className="text-xs text-red-500 hover:text-red-400 font-medium disabled:opacity-50" disabled={removingKeyId === k.id} onClick={() => void handleRemove(k.id)}>{removingKeyId === k.id ? t('Removing…', 'Odebírání…') : t('Remove', 'Odebrat')}</button>
                     </td>
                   </tr>
                 ))}
@@ -789,229 +920,237 @@ function ApiKeysTab({ lang = 'cs' }) {
 
 function WalletsTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
-  const [data, setData] = useState([]);
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
+  const [wallets, setWallets] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [payoutWalletId, setPayoutWalletId] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
-  
-  const [newAddr, setNewAddr] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [newAddress, setNewAddress] = useState('');
   const [newBlockchain, setNewBlockchain] = useState('SOL');
+  const [addressStatus, setAddressStatus] = useState(null);
+  const [circleAddress, setCircleAddress] = useState('');
+  const [circleAmount, setCircleAmount] = useState('');
+  const [circleConfirmed, setCircleConfirmed] = useState(false);
+  const [acting, setActing] = useState(false);
+
+  const loadAccounts = useCallback(async () => {
+    try {
+      const result = await apiJson('/api/dashboard/account');
+      setAccounts(result.accounts || []);
+      setSelectedAcc((current) => current || String(result.accounts?.[0]?.id || ''));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not load accounts.', 'Účty se nepodařilo načíst.')));
+    }
+  }, [t]);
+
+  const loadWalletData = useCallback(async (accountId = selectedAcc) => {
+    if (!accountId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const [walletData, paymentData, payoutData] = await Promise.all([
+        apiJson(`/api/dashboard/wallets?account_id=${encodeURIComponent(accountId)}`),
+        apiJson(`/api/account/payments?account_id=${encodeURIComponent(accountId)}`),
+        apiJson(`/api/dashboard/payout-wallet?account_id=${encodeURIComponent(accountId)}`),
+      ]);
+      setWallets(walletData.wallets || []);
+      setPayouts(paymentData.account_payments || []);
+      setPayoutWalletId(payoutData.wallet_id || null);
+      setError('');
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not load wallet data.', 'Data peněženky se nepodařilo načíst.')));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedAcc, t]);
 
   useEffect(() => {
-    fetch('/api/dashboard/account')
-      .then(res => res.json())
-      .then(d => {
-        setAccounts(d.accounts || []);
-        if (d.accounts && d.accounts.length > 0) {
-          setSelectedAcc(d.accounts[0].id);
-        }
+    const timeout = window.setTimeout(() => { void loadAccounts(); }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadAccounts]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      if (selectedAcc) void loadWalletData(selectedAcc);
+      else setLoading(false);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [selectedAcc, loadWalletData]);
+
+  const validateAddress = async () => {
+    if (!newAddress.trim() || !selectedAcc) return false;
+    setAddressStatus({ loading: true });
+    try {
+      const result = await apiJson('/api/dashboard/wallet/validate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, address: newAddress.trim() }),
       });
-  }, []);
+      setAddressStatus({ valid: result.valid, message: result.message });
+      return result.valid;
+    } catch (requestError) {
+      const validationError = errorMessage(requestError, t('Address validation failed.', 'Ověření adresy selhalo.'));
+      setAddressStatus({ valid: false, message: validationError });
+      return false;
+    }
+  };
 
-  const fetchData = () => {
+  const addWallet = async (event) => {
+    event.preventDefault();
     if (!selectedAcc) return;
-    setLoading(true);
-    Promise.all([
-      fetch(`/api/dashboard/wallets?account_id=${selectedAcc}`).then(res => res.json()),
-      fetch(`/api/account/payments?account_id=${selectedAcc}`).then(res => res.json()),
-      fetch(`/api/dashboard/payout-wallet?account_id=${selectedAcc}`).then(res => res.json())
-    ]).then(([wData, pData, pwData]) => {
-      setData(wData.wallets || []);
-      setPayouts(pData.account_payments || []);
-      setPayoutWalletId(pwData.wallet_id);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    setActing(true); setError(''); setMessage('');
+    try {
+      const valid = await validateAddress();
+      if (!valid) return;
+      await apiJson('/api/dashboard/wallets/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, blockchain: newBlockchain, address: newAddress.trim() }),
+      });
+      setNewAddress(''); setAddressStatus(null);
+      setMessage(t('Wallet added successfully.', 'Peněženka byla úspěšně přidána.'));
+      await loadWalletData();
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not add wallet.', 'Peněženku se nepodařilo přidat.')));
+    } finally { setActing(false); }
   };
 
-  useEffect(() => { fetchData(); }, [selectedAcc]);
-
-  const handleAddWallet = async (e) => {
-    e.preventDefault();
-    const res = await fetch('/api/dashboard/wallets/add', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, blockchain: newBlockchain, address: newAddr })
-    });
-    if(res.ok) { setNewAddr(''); fetchData(); }
-    else alert("Failed to add wallet");
+  const setPayout = async (walletId) => {
+    setActing(true); setError('');
+    try {
+      await apiJson('/api/dashboard/payout-wallet/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: selectedAcc, wallet_id: walletId }) });
+      setMessage(t('Primary payout wallet updated.', 'Hlavní výplatní peněženka byla změněna.'));
+      await loadWalletData();
+    } catch (requestError) { setError(errorMessage(requestError, t('Could not set primary wallet.', 'Hlavní peněženku se nepodařilo nastavit.'))); }
+    finally { setActing(false); }
   };
 
-  const handleSetPayout = async (id) => {
-    const res = await fetch('/api/dashboard/payout-wallet/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, wallet_id: id })
-    });
-    if(res.ok) fetchData();
-    else alert("Failed to set payout wallet");
+  const removeWallet = async (walletId) => {
+    if (!window.confirm(t('Remove this wallet? This can affect future payouts.', 'Odebrat tuto peněženku? Může to ovlivnit budoucí výplaty.'))) return;
+    setActing(true); setError('');
+    try {
+      await apiJson('/api/dashboard/wallets/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: selectedAcc, wallet_id: walletId }) });
+      setMessage(t('Wallet removed.', 'Peněženka byla odebrána.'));
+      await loadWalletData();
+    } catch (requestError) { setError(errorMessage(requestError, t('Could not remove wallet.', 'Peněženku se nepodařilo odebrat.'))); }
+    finally { setActing(false); }
   };
 
-  const handleRemove = async (walletId) => {
-    if (!confirm(t("Remove this wallet?", "Odebrat tuto peněženku?"))) return;
-    await fetch('/api/dashboard/wallets/remove', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, wallet_id: walletId })
-    });
-    fetchData();
+  const initCircle = async () => {
+    if (!selectedAcc || !window.confirm(t('Initialize a Circle self-custody wallet for this account?', 'Inicializovat Circle self-custody peněženku pro tento účet?'))) return;
+    setActing(true); setError('');
+    try {
+      const result = await apiJson('/api/dashboard/wallet/circle/init', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: selectedAcc }) });
+      setMessage(`${t('Circle wallet initialization started.', 'Inicializace Circle peněženky byla spuštěna.')}${result.challenge_id ? ` ${t('Challenge ID:', 'Challenge ID:')} ${result.challenge_id}` : ''}`);
+      await loadWalletData();
+    } catch (requestError) { setError(errorMessage(requestError, t('Could not initialize Circle wallet.', 'Circle peněženku se nepodařilo inicializovat.'))); }
+    finally { setActing(false); }
   };
 
-  const handleInitCircle = async () => {
-    const res = await fetch('/api/dashboard/wallet/circle/init', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc })
-    });
-    const d = await res.json();
-    if(res.ok) alert("Circle Wallet Initialized!\nChallenge ID: " + d.challenge_id);
-    else alert(d.error || "Failed to init Circle wallet");
+  const transferCircle = async (event) => {
+    event.preventDefault();
+    if (!selectedAcc || !circleConfirmed) return;
+    if (!window.confirm(t(`Transfer ${circleAmount} USDC to the entered address? This may be irreversible.`, `Odeslat ${circleAmount} USDC na zadanou adresu? Tato akce může být nevratná.`))) return;
+    setActing(true); setError(''); setMessage('');
+    try {
+      await apiJson('/api/dashboard/wallet/circle/transfer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, address: circleAddress.trim(), amount_usdc: circleAmount, confirmed: true }),
+      });
+      setCircleAddress(''); setCircleAmount(''); setCircleConfirmed(false);
+      setMessage(t('Circle transfer request submitted.', 'Požadavek na Circle převod byl odeslán.'));
+      await loadWalletData();
+    } catch (requestError) { setError(errorMessage(requestError, t('Circle transfer failed.', 'Circle převod selhal.'))); }
+    finally { setActing(false); }
   };
 
   return (
     <div className="space-y-8">
-      <div className="card">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-          <select className="input max-w-xs" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
-            {accounts.map(acc => (
-              <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
-            ))}
-          </select>
-          <button onClick={handleInitCircle} className="btn btn-secondary text-xs">{t("Init Circle Self-Custody", "Zahájit Circle peněženku")}</button>
-        </div>
-
-        <form onSubmit={handleAddWallet} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-[#111] rounded-lg border border-[#333]">
-          <div>
-            <label className="label">{t("Blockchain", "Blockchain")}</label>
-            <select className="input" value={newBlockchain} onChange={e => setNewBlockchain(e.target.value)}>
-              <option value="SOL">Solana (SOL)</option>
-              <option value="MATIC">Polygon (MATIC)</option>
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="label">{t("Wallet Address", "Adresa peněženky")}</label>
-            <div className="flex gap-2">
-              <input type="text" className="input" placeholder={t("Enter address", "Zadejte adresu")} value={newAddr} onChange={e => setNewAddr(e.target.value)} required />
-              <button type="submit" className="btn btn-primary whitespace-nowrap">{t("Add Wallet", "Přidat peněženku")}</button>
-            </div>
-          </div>
-        </form>
-        
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Connected Wallets", "Připojené peněženky")}</h3>
-        {loading ? <div className="text-[#888]">Loading...</div> : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead className="bg-[#111]">
-                <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-                  <th className="py-3 px-4 font-semibold">{t("Address", "Adresa")}</th>
-                  <th className="py-3 px-4 font-semibold">{t("Blockchain", "Blockchain")}</th>
-                  <th className="py-3 px-4 font-semibold">{t("Type", "Typ")}</th>
-                  <th className="py-3 px-4 font-semibold text-right">{t("Actions", "Akce")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#222]">
-                {data.map(w => (
-                  <tr key={w.wallet_id} className="hover:bg-[#111] transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-[#ededed] truncate max-w-[200px]">{w.wallet_address || w.circle_wallet_id}</span>
-                        {payoutWalletId === w.wallet_id && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold uppercase">{t("Primary Payout", "Hlavní výplata")}</span>}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-[#888]">{w.blockchain}</td>
-                    <td className="py-3 px-4 text-[#888]">{w.wallet_type}</td>
-                    <td className="py-3 px-4 text-right space-x-2">
-                      {payoutWalletId !== w.wallet_id && (
-                        <button className="text-xs text-blue-400 hover:text-blue-300 font-medium" onClick={() => handleSetPayout(w.wallet_id)}>{t("Set Primary", "Nastavit jako hlavní")}</button>
-                      )}
-                      <button className="text-xs text-red-500 hover:text-red-400 font-medium" onClick={() => handleRemove(w.wallet_id)}>{t("Remove", "Odebrat")}</button>
-                    </td>
-                  </tr>
-                ))}
-                {data.length === 0 && <tr><td colSpan="4" className="py-6 text-center text-[#888]">{t("No wallets connected.", "Žádné připojené peněženky.")}</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h3 className="text-lg font-semibold mb-4 text-[#ededed]">{t("Payout History", "Historie výplat")}</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead className="bg-[#111]">
-              <tr className="border-b border-[#333] text-[#888] uppercase tracking-wider">
-                <th className="py-3 px-4 font-semibold">{t("Date", "Datum")}</th>
-                <th className="py-3 px-4 font-semibold">{t("Amount", "Částka")}</th>
-                <th className="py-3 px-4 font-semibold">{t("Data (GB)", "Data (GB)")}</th>
-                <th className="py-3 px-4 font-semibold">{t("Status", "Stav")}</th>
-                <th className="py-3 px-4 font-semibold text-right">{t("Transaction", "Transakce")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#222]">
-              {payouts.map(p => (
-                <tr key={p.payment_id} className="hover:bg-[#111] transition-colors">
-                  <td className="py-3 px-4 text-[#888]">{new Date(p.create_time).toLocaleString()}</td>
-                  <td className="py-3 px-4 font-bold text-[#0070f3]">
-                    ${(p.token_amount || (p.payout_nano_cents / 1e9)).toFixed(2)}
-                  </td>
-                  <td className="py-3 px-4 text-[#888]">{(p.payout_byte_count / 1e9).toFixed(2)} GB</td>
-                  <td className="py-3 px-4">
-                    {p.completed ? <span className="text-emerald-500">{t("Completed", "Dokončeno")}</span> : p.canceled ? <span className="text-red-500">{t("Canceled", "Zrušeno")}</span> : <span className="text-yellow-500">{t("Pending", "Čekající")}</span>}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    {p.tx_hash ? (
-                      <a href={p.blockchain === 'SOL' ? `https://solscan.io/tx/${p.tx_hash}` : `https://polygonscan.com/tx/${p.tx_hash}`} target="_blank" className="text-[#0070f3] hover:underline font-mono text-xs">
-                        {p.tx_hash.slice(0, 8)}...
-                      </a>
-                    ) : <span className="text-[#444]">-</span>}
-                  </td>
-                </tr>
-              ))}
-              {payouts.length === 0 && <tr><td colSpan="5" className="py-6 text-center text-[#888]">{t("No payouts found.", "Nebyly nalezeny žádné platby.")}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"><select aria-label={t('Account', 'Účet')} className="input max-w-xs" value={selectedAcc} onChange={(event) => setSelectedAcc(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.nickname || account.username}</option>)}</select><button type="button" disabled={!selectedAcc || acting} onClick={() => void initCircle()} className="btn btn-secondary text-xs disabled:opacity-60">{t('Init Circle Self-Custody', 'Inicializovat Circle self-custody')}</button></div>
+      {error && <div role="alert" className="bg-red-500/10 border-l-4 border-red-500 p-4 text-red-400">{error}</div>}
+      {message && <div role="status" className="bg-emerald-500/10 border-l-4 border-emerald-500 p-4 text-emerald-400">{message}</div>}
+      <div className="card"><h2 className="text-xl font-bold mb-2">{t('Connected Wallets', 'Připojené peněženky')}</h2><p className="text-sm text-[#888] mb-6">{t('Addresses are validated before being sent to URnetwork.', 'Adresy se před odesláním do URnetwork ověřují.')}</p><form onSubmit={addWallet} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 bg-[#111] rounded-lg border border-[#333]"><div><label className="label" htmlFor="wallet-chain">{t('Blockchain', 'Blockchain')}</label><select id="wallet-chain" className="input" value={newBlockchain} onChange={(event) => setNewBlockchain(event.target.value)}><option value="SOL">Solana (SOL)</option><option value="MATIC">Polygon (MATIC)</option></select></div><div className="md:col-span-2"><label className="label" htmlFor="wallet-address">{t('Wallet Address', 'Adresa peněženky')}</label><div className="flex gap-2"><input id="wallet-address" type="text" className="input" placeholder={t('Enter address', 'Zadejte adresu')} value={newAddress} onChange={(event) => { setNewAddress(event.target.value); setAddressStatus(null); }} required maxLength="256" /><button type="submit" disabled={acting || !selectedAcc} className="btn btn-primary whitespace-nowrap disabled:opacity-60">{addressStatus?.loading ? t('Checking…', 'Ověřuji…') : t('Add Wallet', 'Přidat peněženku')}</button></div>{addressStatus && !addressStatus.loading && <p className={`text-xs mt-2 ${addressStatus.valid ? 'text-emerald-400' : 'text-red-400'}`}>{addressStatus.message || (addressStatus.valid ? t('Address is valid.', 'Adresa je platná.') : t('Address is invalid.', 'Adresa není platná.'))}</p>}</div></form>{loading ? <p className="text-[#888]">{t('Loading…', 'Načítání…')}</p> : <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-sm"><thead className="bg-[#111]"><tr className="border-b border-[#333] text-[#888] uppercase tracking-wider"><th className="py-3 px-4">{t('Address', 'Adresa')}</th><th className="py-3 px-4">{t('Blockchain', 'Blockchain')}</th><th className="py-3 px-4">{t('Type', 'Typ')}</th><th className="py-3 px-4 text-right">{t('Actions', 'Akce')}</th></tr></thead><tbody className="divide-y divide-[#222]">{wallets.map((wallet) => <tr key={wallet.wallet_id} className="hover:bg-[#111]"><td className="py-3 px-4"><div className="flex items-center gap-2"><span className="font-mono text-xs text-[#ededed] truncate max-w-[200px]">{wallet.wallet_address || wallet.circle_wallet_id}</span>{payoutWalletId === wallet.wallet_id && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold uppercase">{t('Primary Payout', 'Hlavní výplata')}</span>}</div></td><td className="py-3 px-4 text-[#888]">{wallet.blockchain}</td><td className="py-3 px-4 text-[#888]">{wallet.wallet_type}</td><td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">{payoutWalletId !== wallet.wallet_id && <button type="button" disabled={acting} className="text-xs text-blue-400 hover:text-blue-300 font-medium disabled:opacity-60" onClick={() => void setPayout(wallet.wallet_id)}>{t('Set Primary', 'Nastavit jako hlavní')}</button>}<button type="button" disabled={acting} className="text-xs text-red-500 hover:text-red-400 font-medium disabled:opacity-60" onClick={() => void removeWallet(wallet.wallet_id)}>{t('Remove', 'Odebrat')}</button></td></tr>)}{wallets.length === 0 && <tr><td colSpan="4" className="py-6 text-center text-[#888]">{t('No wallets connected.', 'Žádné připojené peněženky.')}</td></tr>}</tbody></table></div>}</div>
+      <div className="card border-amber-500/30"><h2 className="text-xl font-bold mb-2">{t('Circle transfer', 'Circle převod')}</h2><p className="text-sm text-[#888] mb-5">{t('Review the recipient and amount carefully. Transfers may be irreversible.', 'Pečlivě zkontrolujte příjemce a částku. Převody mohou být nevratné.')}</p><form onSubmit={transferCircle} className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="label" htmlFor="circle-address">{t('Recipient address', 'Adresa příjemce')}</label><input id="circle-address" className="input" value={circleAddress} onChange={(event) => setCircleAddress(event.target.value)} required maxLength="256" /></div><div><label className="label" htmlFor="circle-amount">{t('Amount (USDC)', 'Částka (USDC)')}</label><input id="circle-amount" type="number" inputMode="decimal" min="0.000000001" max="1000000" step="0.000001" className="input" value={circleAmount} onChange={(event) => setCircleAmount(event.target.value)} required /></div><label className="md:col-span-2 flex items-start gap-2 text-sm text-[#ccc]"><input type="checkbox" checked={circleConfirmed} onChange={(event) => setCircleConfirmed(event.target.checked)} className="mt-1" />{t('I have verified the recipient address and understand that the transfer may be irreversible.', 'Ověřil(a) jsem adresu příjemce a rozumím tomu, že převod může být nevratný.')}</label><button type="submit" disabled={acting || !circleConfirmed || !selectedAcc} className="btn btn-danger justify-self-start disabled:opacity-60">{t('Submit Circle transfer', 'Odeslat Circle převod')}</button></form></div>
+      <div className="card"><h2 className="text-xl font-bold mb-4">{t('Payout History', 'Historie výplat')}</h2><div className="overflow-x-auto"><table className="w-full text-left border-collapse text-sm"><thead className="bg-[#111]"><tr className="border-b border-[#333] text-[#888] uppercase tracking-wider"><th className="py-3 px-4">{t('Date', 'Datum')}</th><th className="py-3 px-4">{t('Amount', 'Částka')}</th><th className="py-3 px-4">{t('Data (GB)', 'Data (GB)')}</th><th className="py-3 px-4">{t('Status', 'Stav')}</th><th className="py-3 px-4 text-right">{t('Transaction', 'Transakce')}</th></tr></thead><tbody className="divide-y divide-[#222]">{payouts.map((payment) => { const amount = Number(payment.token_amount ?? Number(payment.payout_nano_cents || 0) / 1e9); const bytes = Number(payment.payout_byte_count || 0); return <tr key={payment.payment_id || `${payment.create_time}-${payment.tx_hash}`} className="hover:bg-[#111]"><td className="py-3 px-4 text-[#888]">{payment.create_time ? new Date(payment.create_time).toLocaleString() : '—'}</td><td className="py-3 px-4 font-bold text-[#0070f3]">${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'}</td><td className="py-3 px-4 text-[#888]">{(bytes / 1e9).toFixed(2)} GB</td><td className="py-3 px-4">{payment.completed ? <span className="text-emerald-500">{t('Completed', 'Dokončeno')}</span> : payment.canceled ? <span className="text-red-500">{t('Canceled', 'Zrušeno')}</span> : <span className="text-yellow-500">{t('Pending', 'Čekající')}</span>}</td><td className="py-3 px-4 text-right">{payment.tx_hash ? <a href={payment.blockchain === 'SOL' ? `https://solscan.io/tx/${payment.tx_hash}` : `https://polygonscan.com/tx/${payment.tx_hash}`} target="_blank" rel="noopener noreferrer" className="text-[#0070f3] hover:underline font-mono text-xs">{payment.tx_hash.slice(0, 8)}…</a> : <span className="text-[#444]">—</span>}</td></tr>; })}{payouts.length === 0 && <tr><td colSpan="5" className="py-6 text-center text-[#888]">{t('No payouts found.', 'Nebyly nalezeny žádné platby.')}</td></tr>}</tbody></table></div></div>
     </div>
   );
 }
 
 function PreferencesTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
   const [prefs, setPrefs] = useState({ product_updates: false });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch('/api/dashboard/account')
-      .then(res => res.json())
-      .then(d => {
-        setAccounts(d.accounts || []);
-        if (d.accounts && d.accounts.length > 0) setSelectedAcc(d.accounts[0].id);
-      });
-  }, []);
+    let cancelled = false;
+    const loadAccounts = async () => {
+      try {
+        const result = await apiJson('/api/dashboard/account');
+        if (cancelled) return;
+        const nextAccounts = result.accounts || [];
+        setAccounts(nextAccounts);
+        setSelectedAcc((current) => current || String(nextAccounts[0]?.id || ''));
+      } catch (requestError) {
+        if (!cancelled) setError(errorMessage(requestError, t('Could not load accounts.', 'Účty se nepodařilo načíst.')));
+      }
+    };
+    void loadAccounts();
+    return () => { cancelled = true; };
+  }, [t]);
 
   useEffect(() => {
-    if(!selectedAcc) return;
-    setLoading(true);
-    fetch(`/api/preferences?account_id=${selectedAcc}`)
-      .then(res => res.json())
-      .then(d => { setPrefs(d); setLoading(false); });
-  }, [selectedAcc]);
+    const controller = new AbortController();
+    const loadPreferences = async () => {
+      if (!selectedAcc) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const result = await apiJson(`/api/preferences?account_id=${encodeURIComponent(selectedAcc)}`, { signal: controller.signal });
+        if (!controller.signal.aborted) {
+          setPrefs({ product_updates: Boolean(result.product_updates) });
+          setError('');
+        }
+      } catch (requestError) {
+        if (!controller.signal.aborted) setError(errorMessage(requestError, t('Could not load preferences.', 'Předvolby se nepodařilo načíst.')));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    };
+    void loadPreferences();
+    return () => controller.abort();
+  }, [selectedAcc, t]);
 
   const handleToggle = async () => {
-    const newVal = !prefs.product_updates;
-    const res = await fetch('/api/preferences/set', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, product_updates: newVal })
-    });
-    if(res.ok) setPrefs({...prefs, product_updates: newVal});
+    if (!selectedAcc || saving) return;
+    const productUpdates = !prefs.product_updates;
+    setSaving(true);
+    setError('');
+    try {
+      await apiJson('/api/preferences/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, product_updates: productUpdates }),
+      });
+      setPrefs((current) => ({ ...current, product_updates: productUpdates }));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not save preferences.', 'Předvolby se nepodařilo uložit.')));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="card max-w-xl">
-      <select className="input max-w-xs mb-6" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
+      {error && <div role="alert" className="mb-6 bg-red-500/10 border-l-4 border-red-500 p-4 text-red-400">{error}</div>}
+      <select className="input max-w-xs mb-6" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)} disabled={accounts.length === 0}>
         {accounts.map(acc => (
           <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
         ))}
@@ -1021,9 +1160,11 @@ function PreferencesTab({ lang = 'cs' }) {
           <div className="font-medium">{t("Product Updates", "Aktualizace produktu")}</div>
           <div className="text-sm text-[#888]">{t("Receive emails about new features and updates.", "Dostávejte e-maily o nových funkcích a aktualizacích.")}</div>
         </div>
-        <button 
-          onClick={handleToggle}
-          className={`w-12 h-6 rounded-full transition-colors relative ${prefs.product_updates ? 'bg-[#0070f3]' : 'bg-[#333]'}`}
+        <button
+          type="button"
+          disabled={loading || saving || !selectedAcc}
+          onClick={() => void handleToggle()}
+          className={`w-12 h-6 rounded-full transition-colors relative disabled:opacity-50 ${prefs.product_updates ? 'bg-[#0070f3]' : 'bg-[#333]'}`}
         >
           <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${prefs.product_updates ? 'left-7' : 'left-1'}`}></div>
         </button>
@@ -1034,44 +1175,65 @@ function PreferencesTab({ lang = 'cs' }) {
 
 function FeedbackTab({ lang = 'cs' }) {
   const isCs = lang === 'cs';
-  const t = (en, cs) => isCs ? cs : en;
+  const t = useCallback((en, cs) => isCs ? cs : en, [isCs]);
   const [accounts, setAccounts] = useState([]);
   const [selectedAcc, setSelectedAcc] = useState('');
   const [stars, setStars] = useState(5);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
-    fetch('/api/dashboard/account')
-      .then(res => res.json())
-      .then(d => {
-        setAccounts(d.accounts || []);
-        if (d.accounts && d.accounts.length > 0) setSelectedAcc(d.accounts[0].id);
-      });
-  }, []);
+    let cancelled = false;
+    const loadAccounts = async () => {
+      try {
+        const result = await apiJson('/api/dashboard/account');
+        if (cancelled) return;
+        const nextAccounts = result.accounts || [];
+        setAccounts(nextAccounts);
+        setSelectedAcc((current) => current || String(nextAccounts[0]?.id || ''));
+      } catch (requestError) {
+        if (!cancelled) setError(errorMessage(requestError, t('Could not load accounts.', 'Účty se nepodařilo načíst.')));
+      }
+    };
+    void loadAccounts();
+    return () => { cancelled = true; };
+  }, [t]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!selectedAcc || sending) return;
     setSending(true);
-    const res = await fetch('/api/feedback/send', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selectedAcc, star_count: stars, text })
-    });
-    setSending(false);
-    if(res.ok) { alert(t("Feedback sent! Thank you.", "Zpětná vazba odeslána! Děkujeme.")); setText(''); }
-    else alert(t("Failed to send feedback.", "Nepodařilo se odeslat zpětnou vazbu."));
+    setError('');
+    setMessage('');
+    try {
+      await apiJson('/api/feedback/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: selectedAcc, star_count: stars, text: text.trim() }),
+      });
+      setText('');
+      setMessage(t('Feedback sent! Thank you.', 'Zpětná vazba byla odeslána. Děkujeme.'));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t('Could not send feedback.', 'Zpětnou vazbu se nepodařilo odeslat.')));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
     <div className="card max-w-xl">
+      {error && <div role="alert" className="mb-6 bg-red-500/10 border-l-4 border-red-500 p-4 text-red-400">{error}</div>}
+      {message && <div role="status" className="mb-6 bg-emerald-500/10 border-l-4 border-emerald-500 p-4 text-emerald-400">{message}</div>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <label className="label">{t("Account", "Účet")}</label>
-        <select className="input mb-4" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)}>
+        <select className="input mb-4" value={selectedAcc} onChange={(e) => setSelectedAcc(e.target.value)} disabled={accounts.length === 0}>
           {accounts.map(acc => (
             <option key={acc.id} value={acc.id}>{acc.nickname || acc.username}</option>
           ))}
         </select>
-        
+
         <label className="label">{t("Rating", "Hodnocení")}</label>
         <div className="flex gap-2 mb-4">
           {[1,2,3,4,5].map(s => (
@@ -1081,9 +1243,9 @@ function FeedbackTab({ lang = 'cs' }) {
 
         <label className="label">{t("Message", "Zpráva")}</label>
         <textarea className="input min-h-[120px]" value={text} onChange={e => setText(e.target.value)} placeholder={t("What can we improve?", "Co můžeme zlepšit?")}></textarea>
-        
-        <button type="submit" disabled={sending} className="btn btn-primary w-full">
-          {sending ? "Sending..." : "Submit Feedback"}
+
+        <button type="submit" disabled={sending || !selectedAcc} className="btn btn-primary w-full">
+          {sending ? t('Sending…', 'Odesílání…') : t('Submit Feedback', 'Odeslat zpětnou vazbu')}
         </button>
       </form>
     </div>
